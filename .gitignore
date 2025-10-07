@@ -137,3 +137,22 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# === Chrome Extension ===
+# Build artifacts (if using a bundler)
+dist/
+build/
+packed/
+
+# User-specific Chrome extension data
+*.crx
+*.pem
+*.zip
+
+# === Environment & API keys ===
+.env
+.env.local
+.env.development
+.env.production
+
+chrome_storage.json
