@@ -19,6 +19,6 @@
         }
     ],
     "side_panel": {
-        "default_path": "sidebar/sidepanel.html"
+        "default_path": "sidepanel/sidepanel.html"
     }
 }
