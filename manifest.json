@@ -2,5 +2,23 @@
     "manifest_version": 3,
     "name": "Subtext",
     "version": "1.0.0",
-    "description": "Chrome extension that helps decode media, providing additional context on web pages to help promote media literacy"
+    "description": "Chrome extension that helps decode media, providing additional context on web pages to help promote media literacy",
+    "permissions": [
+        "sidePanel",
+        "activeTab",
+        "scripting"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["content_script.js"],
+            "run_at": "document_idle"
+        }
+    ],
+    "side_panel": {
+        "default_path": "sidebar/sidepanel.html"
+    }
 }
