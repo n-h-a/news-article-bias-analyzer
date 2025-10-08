@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Subtext Settings</title>
+        <style>label{display:block; margin:.5rem 0}</style>
+    </head>
+    <body>
+        <h1>Subtext Settings</h1>
+        <label>
+            OpenAI API key
+            <input id="apikey" type="password" placeholder="sk-..." style="width: 320px;">
+        </label>
+        <label>
+            Model
+            <input id="model" value="gpt-4o-mini">
+        </label>
+        <button id="save">Save</button>
+        <button id="forget">Forget key</button>
+        <p id="status"></p>
+        <script src="options.js"></script>
+    </body>
+</html>

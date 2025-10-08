@@ -29,10 +29,10 @@ async function analyzeArticle() {
         contentEl.textContent = summaryResp?.error || 'Could not process article';
     }
 
-    // Apply highlights
-    if (biasResp?.ok && biasResp.annotations) {
-        await chrome.tabs.sendMessage(tab.id, { type: 'APPLY_HIGHLIGHTS', annotations: biasResp.annotations });
-    }
+    // // Apply highlights
+    // if (biasResp?.ok && biasResp.annotations) {
+    //     await chrome.tabs.sendMessage(tab.id, { type: 'APPLY_HIGHLIGHTS', annotations: biasResp.annotations });
+    // }
 }
 
 analyzeBtn.addEventListener('click', analyzeArticle);
