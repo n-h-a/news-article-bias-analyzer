@@ -58,3 +58,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     return false;
 });
+
+chrome.tabs.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg?.type === 'APPLY_HIGHLIGHTS') {
+        console.log('Apply highlights message received by content script.')
+    }
+});
