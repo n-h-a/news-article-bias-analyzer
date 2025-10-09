@@ -1,33 +1,38 @@
 function extractText(d) {
-  // 1) Convenience field (sometimes present)
-  if (typeof d?.output_text === 'string' && d.output_text.trim()) {
-    return d.output_text.trim();
-  }
-  // 2) Responses-style structure
-  if (Array.isArray(d?.output)) {
-    const parts = [];
-    for (const item of d.output) {
-      // content array with .text entries
-      if (Array.isArray(item?.content)) {
-        for (const c of item.content) {
-          if (typeof c?.text === 'string') parts.push(c.text);
-        }
-      }
-      // some responses put text directly on the item
-      if (typeof item?.text === 'string') parts.push(item.text);
+  try {
+    // 1) Convenience field (sometimes present)
+    if (typeof d?.output_text === 'string' && d.output_text.trim()) {
+      return d.output_text.trim();
     }
-    const joined = parts.join('\n').trim();
-    if (joined) return joined;
-  }
-  // 3) Older chat-like shapes (defensive fallback)
-  if (Array.isArray(d?.choices)) {
-    const t = d.choices
-      .map(ch => ch?.message?.content || ch?.text)
-      .filter(Boolean)
-      .join('\n')
-      .trim();
-    if (t) return t;
-  }
+
+    // 2) Responses-style structure
+    if (Array.isArray(d?.output)) {
+      const parts = [];
+      for (const item of d.output) {
+        // content array with .text entries
+        if (Array.isArray(item?.content)) {
+          for (const c of item.content) {
+            if (typeof c?.text === 'string') parts.push(c.text);
+          }
+        }
+        // some responses put text directly on the item
+        if (typeof item?.text === 'string') parts.push(item.text);
+      }
+      const joined = parts.join('\n').trim();
+      if (joined) return joined;
+    }
+
+    // 3) Older chat-like shapes (defensive fallback)
+    if (Array.isArray(d?.choices)) {
+      const t = d.choices
+        .map(ch => ch?.message?.content || ch?.text)
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+      if (t) return t;
+    }
+  } catch (e) {}
+
   return '';
 }
 
@@ -47,20 +52,22 @@ async function askOpenAI(prompt) {
         body: JSON.stringify({
             model: openai_model || 'gpt-4o-mini',
             input: prompt,
-            max_output_tokens: 300,
-            temperature: 0
+            temperature: 0,
+            max_output_tokens: 300
         })
     });
 
     if (!resp.ok) {
         if (resp.status === 401) throw new Error('Unauthorized: check your API key.');
         if (resp.status == 429) throw new Error('Rate limited: try again later.');
-        const text = await resp.text;
+        const text = await resp.text();
         throw new Error(`OpenAI error ${resp.status}: ${text}`);
     }
 
     const data = await resp.json();
     const raw = extractText(data) || '(no text from model)';
+
+    // Try to parse annotations from the model's JSON
     let annotations = [];
     try {
         annotations = JSON.parse(raw);

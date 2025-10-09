@@ -29,10 +29,15 @@ async function analyzeArticle() {
         contentEl.textContent = summaryResp?.error || 'Could not process article';
     }
 
-    // // Apply highlights
-    // if (biasResp?.ok && biasResp.annotations) {
-    //     await chrome.tabs.sendMessage(tab.id, { type: 'APPLY_HIGHLIGHTS', annotations: biasResp.annotations });
-    // }
+    // Apply highlights
+
+    if (biasResp?.ok && Array.isArray(biasResp.annotations) && biasResp.annotations.length > 0) {
+        try {
+            await chrome.tabs.sendMessage(tab.id, { type: 'APPLY_HIGHLIGHTS', annotations: biasResp.annotations });
+        } catch (err) {
+            console.warn('APPLY_HIGHLIGHTS failed:', err);
+        }
+    }
 }
 
 analyzeBtn.addEventListener('click', analyzeArticle);

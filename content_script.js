@@ -54,13 +54,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === 'SCAN_ARTICLE') {
         const article = extractArticleText();
         sendResponse(article);
-        return false;
+        return;
     }
-    return false;
-});
 
-// chrome.tabs.onMessage.addListener((msg, sender, sendResponse) => {
-//     if (msg?.type === 'APPLY_HIGHLIGHTS') {
-//         console.log('Apply highlights message received by content script.')
-//     }
-// });
+    if (msg?.type === 'APPLY_HIGHLIGHTS' && Array.isArray(msg.annotations)) {
+        
+        return true;
+    }
+});
