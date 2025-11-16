@@ -1,15 +1,70 @@
+<!-- sidepanel.html -->
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Subtext Side Panel</title>
-        <link rel="stylesheet" href="sidepanel.css">
+        <meta charset="UTF-8"/>
+        <link rel="stylesheet" href="../styles/base.css"/>
+        <link rel="stylesheet" href="sidepanel.css"/>
+        <title>Subtext</title>
     </head>
     <body>
-        <div id="status"></div>
-        <div id="content"></div>
-        <button id="analyze-article">Analyze</button>
-        <script src="sidepanel.js"></script>
+        <!-- PANEL HEADER -->
+        <header class="panel-header">
+            <div class="panel-header-left">
+                <span class="panel-header-title">Subtext</span>
+            </div>
+            <div class="panel-header-right">
+                <div class="panel-header-progress"></div>
+                <button id="close-panel-header" class="panel-header-close" title="Close">x</button>
+            </div>
+        </header>
+
+        <!-- STARTING PAGE -->
+        <main id="start-page" class="page page--active">
+            <!-- detected top -->
+            <div class="detected-top">
+                <div class="detected-top-play-circle">▶</div>
+                <h1 class="detected-top-title">Article Detected</h1>
+                <p class="detected-top-text">
+                Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary.
+                </p>
+            </div>
+
+            <!-- api warning card -->
+            <div id="api-warning-card" class="api-warning-card">
+                <p class="api-warning-card-title">
+                    <span class="api-warning-card-dot"></span>
+                    API key required, Configure your OpenAI API key to enable AI analysis.
+                </p>
+                <button id="btn-api-warning-card-open-settings" class="api-warning-card-btn">
+                    <span class="api-warning-card-icon">⚙</span>
+                    <span>Open Settings</span>
+                </button>
+            </div>
+
+            <!-- detected article (preview) card -->
+            <div class="detected-article-card" id="detected-article-card">
+                <p class="detected-article-card-label">DETECTED ARTICLE</p>
+                <p id="detected-article-card-title" class="detected-article-card-title">
+                    Retrieving title...
+                </p>
+                <p id="detected-article-card-source" class="detected-article-card-source">
+                    Retrieving source...
+                </p>
+                <a id="detected-article-card-url" class="detected-article-card-url" href="https://www.cnn.com/2024/politics/election-polls-latest" target="_blank" rel="noreferrer">
+                    Retrieving link...
+                </a>
+            </div>
+
+            <!-- analyze button -->
+            <button id="btn-start-analyze" class="action-primary btn-start-analyze">
+                Analyze Article
+            </button>
+        </main>
+
+        <!-- RESULTS PAGE -->
+        <main id="results-page" class="results-page page">
+            <h1>RESULTS PAGE</h1>
+        </main>
     </body>
 </html>

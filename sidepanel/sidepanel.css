@@ -1,0 +1,217 @@
+/* sidepanel.css */
+
+/* === PANEL HEADER === */
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--card, #fff);
+    padding: 10px 14px 6px 14px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.panel-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.panel-header-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-gray-900, oklch(.21 .034 264.665));
+}
+
+.panel-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.panel-header-progress {
+    width: 40px;
+    height: 2px;
+    background: var(--color-blue-600, oklch(.546 .245 262.881));
+    border-radius: 9999px;
+    margin-right: 10px;
+}
+
+.panel-header-close {
+    background: transparent;
+    border: none;
+    font-size: 0.9rem;
+    color: var(--color-gray-500, oklch(.551 .027 264.364));
+    cursor: pointer;
+    transition: color 0.1s ease-out;
+}
+
+.panel-header-close:hover {
+    color: var(--color-gray-700, oklch(.373 .034 259.733));
+}
+
+/* === PAGES === */
+.page {
+    display: none;
+    height: calc(100vh - 48px);
+    overflow-y: auto;
+    background: var(--background, #fff);
+}
+
+.page--active {
+    display: block;
+}
+
+/* === PAGE 1: START PAGE === */
+/* detected top */
+.detected-top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-top: 18px;
+    margin-bottom: 14px;
+    text-align: center;
+}
+
+.detected-top-play-circle {
+    width: 54px;
+    height: 54px;
+    border-radius: 9999px;
+    background: rgba(37, 99, 235, 0.08);
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    display: grid;
+    place-items: center;
+    font-size: 1rem;
+    color: var(--color-blue-600, #2563eb);
+}
+
+.detected-top-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-gray-900, oklch(.21 .034 264.665));
+}
+
+.detected-top-text {
+    max-width: 230px;
+    font-size: 0.72rem;
+    color: rgba(15, 23, 42, 0.55);
+}
+
+/* api warning card */
+.api-warning-card {
+    background: rgba(252, 191, 73, 0.12);
+    border: 1px solid rgba(252, 191, 73, 0.35);
+    border-radius: 10px;
+    padding: 10px 12px 12px;
+    margin-bottom: 12px;
+}
+
+.api-warning-card-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: #8a5b12;
+    margin-bottom: 8px;
+    line-height: 1.35;
+}
+
+.api-warning-card-dot {
+    width: 6px;
+    height: 6px;
+    background: #d97706;
+    border-radius: 9999px;
+    flex: 0 0 6px;
+}
+
+.api-warning-card-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #d97706;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #fff;
+    padding: 5px 10px 6px;
+    cursor: pointer;
+}
+
+.api-warning-card-icon {
+    font-size: 0.7rem;
+}
+
+/* detected article card */
+.detected-article-card {
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.03);
+    border-radius: 10px;
+    padding: 10px 12px 10px;
+    margin-bottom: 12px;
+    box-shadow: 0 6px 12px rgba(15, 23, 42, 0.01);
+}
+
+.detected-article-card-label {
+    font-size: 0.65rem;
+    color: var(--color-gray-500, oklch(.551 .027 264.364));
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+}
+
+.detected-article-card-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-gray-900, oklch(.21 .034 264.665));
+    margin-bottom: 2px;
+}
+
+.detected-article-card-source {
+    font-size: 0.68rem;
+    color: rgba(15, 23, 42, 0.6);
+    margin-bottom: 2px;
+}
+
+.detected-article-card-url {
+    display: block;
+    font-size: 0.65rem;
+    color: var(--color-blue-600, #2563eb);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* analyze button */
+.btn-start-analyze {
+    margin-top: 4px;
+}
+
+/* === PAGE 2: RESULTS PAGE === */
+
+/* === ACTIONS === */
+.action-primary {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--color-blue-600, oklch(.546 .245 262.881));
+    border: none;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #fff;
+    padding: 8px 0 9px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: filter 0.1s ease-out;
+}
+
+.action-primary:hover {
+    filter: brightness(1.02);
+}
