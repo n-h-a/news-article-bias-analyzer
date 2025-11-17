@@ -20,7 +20,7 @@
         </header>
 
         <!-- STARTING PAGE -->
-        <main id="start-page" class="page page--active">
+        <main id="start-page" class="page">
             <!-- detected top -->
             <div class="detected-top">
                 <div class="detected-top-play-circle">▶</div>
@@ -51,20 +51,135 @@
                 <p id="detected-article-card-source" class="detected-article-card-source">
                     Retrieving source...
                 </p>
-                <a id="detected-article-card-url" class="detected-article-card-url" href="https://www.cnn.com/2024/politics/election-polls-latest" target="_blank" rel="noreferrer">
+                <a id="detected-article-card-url" class="detected-article-card-url" href="#" target="_blank" rel="noreferrer">
                     Retrieving link...
                 </a>
             </div>
 
             <!-- analyze button -->
-            <button id="btn-start-analyze" class="action-primary btn-start-analyze">
+            <button id="btn-start-analyze" class="actions-section-primary btn-start-analyze">
                 Analyze Article
             </button>
         </main>
 
         <!-- RESULTS PAGE -->
-        <main id="results-page" class="results-page page">
-            <h1>RESULTS PAGE</h1>
+        <main id="results-page" class="results-page page page--active">
+            <!-- article header -->
+            <section class="article-header">
+                <h1 id="article-header-title" class="article-header-title"></h1>
+
+                <div class="article-header-meta">
+                    <span id="article-header-source" class="article-header-source"></span>
+                    <span class="article-header-bias-pill"></span>
+                </div>
+
+                <a
+                id="article-header-link"
+                class="article-header-link"
+                href="#"
+                target="_blank"
+                rel="noreferrer"
+                ></a>
+            </section>
+
+            <hr class="divider"/>
+
+            <!-- analyzing card -->
+            <section id="analyzing-card" class="analyzing-card">
+                <div class="analyzing-card-icon">
+                    <img src="../icons/source.png" alt="source" class="analyzing-card-icon-img">
+                </div>
+                <div class="analyzing-card-body">
+                    <p class="analyzing-card-label">
+                        🌐 Analyzing full article
+                    </p>
+                    <p id="analyzing-card-article-title" class="analyzing-card-article-title"></p>
+                </div>
+            </section>
+
+            <!-- ai summary -->
+            <section id="summary-section" class="summary-section">
+                <h2 class="summary-section-title">AI SUMMARY OF FULL ARTICLE</h2>
+                <hr class="divider"/>
+                <p class="summary-section-subtitle">Generated from complete article analysis</p>
+
+                <ul id="summary-section-list" class="summary-section-list"></ul>
+            </section>
+
+            <!-- bias detection -->
+            <section id="bias-section" class="bias-section">
+                <h2 class="bias-section-title">BIAS DETECTION</h2>
+                <hr class="divider"/>
+
+                <h3 class="bias-section-subtitle">ARTICLE EXCERPT</h3>
+
+                <div class="bias-section-excerpt-card">
+                    <p id="bias-section-excerpt"></p>
+                </div>
+
+                <!-- legend -->
+                <div class="bias-section-legend">
+                    <div class="bias-section-legend-item">
+                        <span class="bias-section-legend-swatch bias-section-legend-left"></span>
+                        <span>Left bias</span>
+                    </div>
+                    <div class="bias-section-legend-item">
+                        <span class="bias-section-legend-swatch bias-section-legend-right"></span>
+                        <span>Right bias</span>
+                    </div>
+                    <div class="bias-section-legend-item">
+                        <span class="bias-section-legend-swatch bias-section-legend-loaded"></span>
+                        <span>Loaded language</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- detected bias indicators -->
+            <section id="bias-indicators-section" class="bias-indicators-section">
+                <h3 class="bias-indicators-section-title">DETECTED BIAS INDICATORS</h3>
+                <hr class="divider"/>
+                <div id="bias-indicators-section-list" class="bias-indicators-section-list"></div>
+            </section>
+
+            <!-- source analysis -->
+            <section id="source-section" class="source-section">
+                <h3 class="source-section-title">SOURCE ANALYSIS</h3>
+                <hr class="divider"/>
+
+                <div class="source-section-row">
+                    <span id="source-section-name" class="source-section-name"></span>
+                    <span id="source-section-bias-pill" class="source-section-bias-pill"></span>
+                </div>
+
+                <div class="source-section-meta-row">
+                    <span id="source-section-credibility" class="source-section-meta">CREDIBILITY:</span>
+                    <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
+                </div>
+
+                <div class="source-section-bottom-line"></div>
+            </section>
+
+            <!-- actions -->
+            <section id="actions-section" class="actions-section">
+                <h3 class="actions-section-title">ACTIONS</h3>
+
+                <button id="btn-actions-section-see-context" class="actions-section-primary">
+                    <span class="actions-section-action-icon" aria-hidden="true">↗</span>
+                    <span>See More Context</span>
+                </button>
+
+                <div class="actions-section-row">
+                    <button id="btn-actions-section-copy-summary" class="actions-section-secondary">
+                        <span class="actions-section-secondary-icon" aria-hidden="true">📋</span>
+                        <span>Copy Summary</span>
+                    </button>
+                    <button id="btn-actions-section-settings" class="actions-section-secondary">
+                        <span class="actions-section-secondary-icon" aria-hidden="true">⚙</span>
+                        <span>Settings</span>
+                    </button>
+                </div>
+            </section>
         </main>
+        <!-- <script src="sidepanel.js"></script> -->
     </body>
 </html>
