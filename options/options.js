@@ -25,4 +25,4 @@ document.getElementById('forget').addEventListener('click', async () => {
 (async () => {
     const { openai_model } = await chrome.storage.local.get(['openai_model']);
     if (openai_model) modelEl.value = openai_model;
-})
+})();

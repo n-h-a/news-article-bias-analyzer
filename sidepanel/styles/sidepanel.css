@@ -39,7 +39,7 @@
     margin-right: 10px;
 }
 
-.panel-header-close {
+.panel-header-close-btn {
     background: transparent;
     border: none;
     font-size: 0.9rem;
@@ -352,7 +352,7 @@
 }
 
 
-.summary-list li::before { /* blue dot */
+.summary-section-list li::before { /* blue dot */
     width: 6px;
     height: 6px;
     flex: 0 0 6px;

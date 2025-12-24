@@ -3,8 +3,8 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8"/>
-        <link rel="stylesheet" href="../styles/base.css"/>
-        <link rel="stylesheet" href="sidepanel.css"/>
+        <link rel="stylesheet" href="styles/base.css"/>
+        <link rel="stylesheet" href="styles/sidepanel.css"/>
         <title>Subtext</title>
     </head>
     <body>
@@ -15,12 +15,12 @@
             </div>
             <div class="panel-header-right">
                 <div class="panel-header-progress"></div>
-                <button id="close-panel-header" class="panel-header-close" title="Close">x</button>
+                <button id="btn-close-panel-header" class="panel-header-close-btn" title="Close">x</button>
             </div>
         </header>
 
         <!-- STARTING PAGE -->
-        <main id="start-page" class="page">
+        <main id="start-page" class="page page--active">
             <!-- detected top -->
             <div class="detected-top">
                 <div class="detected-top-play-circle">▶</div>
@@ -34,7 +34,7 @@
             <div id="api-warning-card" class="api-warning-card">
                 <p class="api-warning-card-title">
                     <span class="api-warning-card-dot"></span>
-                    API key required, Configure your OpenAI API key to enable AI analysis.
+                    API key required. Configure your OpenAI API key to enable AI analysis.
                 </p>
                 <button id="btn-api-warning-card-open-settings" class="api-warning-card-btn">
                     <span class="api-warning-card-icon">⚙</span>
@@ -63,7 +63,7 @@
         </main>
 
         <!-- RESULTS PAGE -->
-        <main id="results-page" class="results-page page page--active">
+        <main id="results-page" class="results-page page">
             <!-- article header -->
             <section class="article-header">
                 <h1 id="article-header-title" class="article-header-title"></h1>
@@ -180,6 +180,6 @@
                 </div>
             </section>
         </main>
-        <!-- <script src="sidepanel.js"></script> -->
+        <script src="sidepanel.js"></script>
     </body>
 </html>

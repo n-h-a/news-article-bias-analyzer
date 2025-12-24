@@ -1,116 +1,264 @@
-function extractText(d) {
-  try {
-    // 1) Convenience field (sometimes present)
-    if (typeof d?.output_text === 'string' && d.output_text.trim()) {
-      return d.output_text.trim();
-    }
+// background.js
 
-    // 2) Responses-style structure
-    if (Array.isArray(d?.output)) {
-      const parts = [];
-      for (const item of d.output) {
-        // content array with .text entries
-        if (Array.isArray(item?.content)) {
-          for (const c of item.content) {
-            if (typeof c?.text === 'string') parts.push(c.text);
-          }
-        }
-        // some responses put text directly on the item
-        if (typeof item?.text === 'string') parts.push(item.text);
-      }
-      const joined = parts.join('\n').trim();
-      if (joined) return joined;
-    }
-
-    // 3) Older chat-like shapes (defensive fallback)
-    if (Array.isArray(d?.choices)) {
-      const t = d.choices
-        .map(ch => ch?.message?.content || ch?.text)
-        .filter(Boolean)
-        .join('\n')
-        .trim();
-      if (t) return t;
-    }
-  } catch (e) {}
-
-  return '';
+// ========== HELPERS ==========
+function getApiSettings(cb) {
+    chrome.storage.local.get(["openai_api_key", "openai_model"], data => {
+        const key = (data.openai_api_key || "").trim();
+        const model = data.openai_model || "gpt-4o-mini";
+        cb(Boolean(key), key, model);
+    });
 }
 
-async function askOpenAI(prompt) {
-    const { openai_api_key, openai_model } = await chrome.storage.local.get([
-        'openai_api_key',
-        'openai_model'
-    ]);
-    if (!openai_api_key) throw new Error('Missing API key. Add it in Options.');
+function openOptionsPage() {
+    if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+    } else {
+        chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html")})
+    }
+}
 
-    const resp = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
+function sendToPanel(msg) {
+    chrome.runtime.sendMessage(msg);
+}
+
+// ========== LLM CALL ==========
+async function callBiasModel({ apiKey, model, article }) {
+    const endpoint = "https://api.openai.com/v1/chat/completions";
+
+    const system = `
+You are a media analysis assistant. Read the article and return JSON in this exact shape:
+
+{
+  "bullet_points": [
+    "1–2 sentence key point 1",
+    "1–2 sentence key point 2",
+    "1–2 sentence key point 3",
+    "1–2 sentence key point 4",
+    "1–2 sentence key point 5",
+    "1–2 sentence key point 6"
+  ],
+  "bias_excerpt_html": "<p>...with <span class='bias-left' data-reason='...'>biased phrase</span> or <span class='bias-right' data-reason='...'>loaded phrase</span>...</p>",
+  "indicators": [
+    { "phrase": "exact phrase from article", "bias": "left|right|loaded", "reason": "short explanation" }
+  ]
+}
+
+Rules:
+- Stay neutral, factual, concise.
+- ALWAYS return 6 bullet_points, 1–2 sentences each.
+- Use only: bias-left, bias-right, bias-loaded.
+- bias_excerpt_html should be 1–2 short paragraphs with annotated spans.
+- indicators must match exact article text and include a brief reason.
+- Output valid JSON only, no code fences.
+
+Examples:
+- Left bias: "progressive reform" — frames liberal policy positively.
+- Left bias: "climate justice" — moral framing supporting environmental activism.
+- Right bias: "radical liberals" — portrays opposing ideology as extreme.
+- Right bias: "leftist agenda" — implies manipulative political intent.
+- Loaded: "shocking revelation" — evokes emotional reaction.
+- Loaded: "heroic stand" — praises one side or actor emotionally.
+    `.trim();
+
+    const user = `
+Article:
+${article}
+    `.trim();
+
+    const body = {
+        model,
+        messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+        ],
+        temperature: 0.4
+    };
+
+    const res = await fetch(endpoint, {
+        method: "POST",
         headers: {
-            'Authorization': `Bearer ${openai_api_key}`,
-            'Content-Type': 'application/json'
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-            model: openai_model || 'gpt-4o-mini',
-            input: prompt,
-            temperature: 0,
-            max_output_tokens: 300
-        })
+        body: JSON.stringify(body)
     });
 
-    if (!resp.ok) {
-        if (resp.status === 401) throw new Error('Unauthorized: check your API key.');
-        if (resp.status == 429) throw new Error('Rate limited: try again later.');
-        const text = await resp.text();
-        throw new Error(`OpenAI error ${resp.status}: ${text}`);
+    if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error("OpenAI error: " + res.status + " " + txt);
     }
 
-    const data = await resp.json();
-    const raw = extractText(data) || '(no text from model)';
+    const data = await res.json();
+    let content = data?.choices?.[0]?.message?.content?.trim() || "";
 
-    // Try to parse annotations from the model's JSON
-    let annotations = [];
+    // Strip code fences if model added them.
+    if (content.startsWith("```")) {
+        content = content.replace(/^```(json)?/i, "").replace(/```$/, "").trim();
+    }
+
+    // Default Structure
+    let parsed = {
+        bullet_points: [],
+        bias_excerpt_html: "",
+        indicators: []
+    };
+
     try {
-        annotations = JSON.parse(raw);
-    } catch {}
+        parsed = JSON.parse(content);
+    } catch (err) {}
 
-    return { ok: true, text: raw, annotations };
+    if (!Array.isArray(parsed.bullet_points)) {
+        parsed.bullet_points = [];
+    }
+
+    if (!Array.isArray(parsed.indicators)) {
+        parsed.indicators = [];
+    }
+
+    return parsed;
 }
 
+// ========== MESSAGE HUB ==========
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg?.type === 'SUMMARIZE_AND_INTERPRET_ARTICLE' && msg?.article?.text) {
-        const { text: article_text, title, length } = msg.article;
-        const prompt = `Summarize and identify possible biases in this article:\n\n${article_text}`;
-
-        askOpenAI(prompt)
-            .then(res => sendResponse({ ...res, title }))
-            .catch(err => sendResponse({ ok: false, error: err.message }));
-
-        return true; // Keep the message channel open for async sendResponse.
+    // 1. Panel asks if API key exists.
+    if (msg.type === "SUBTEXT_CHECK_API_KEY") {
+        getApiSettings(hasKey => {
+            sendToPanel({
+                type: "SUBTEXT_HAS_API_KEY",
+                payload: { hasKey }
+            });
+        });
+        return;
     }
 
-    if (msg?.type === 'DETECT_BIAS' && msg?.article?.text) {
-        const { text: article_text, title, length } = msg.article;
-        const prompt = `
-You are a bias annotator. From the text below, extract words/phrases that suggest bias.
-For each item include:
-- phrase: the exact substring
-- category: one of "left", "right", "loaded"
-- reason: 1–2 sentences explaining why it's biased
+    // 2. Panel clicked "Analyze".
+    if (msg.type === "SUBTEXT_START_ANALYSIS") {
+        getApiSettings((hasKey, apiKey, model) => {
+            if (!hasKey) {
+                sendToPanel({
+                    type: "SUBTEXT_HAS_API_KEY",
+                    payload: { hasKey: false }
+                });
+                openOptionsPage();
+                return;
+            }
 
-Return ONLY compact JSON (no prose) as an array of objects like:
-[{"phrase":"big government","category":"left","reason":"Typically critiqued by right-leaning rhetoric."},
- {"phrase":"tax cuts for the rich","category":"left","reason":"Framing suggesting wealth-targeted policy critique."},
- {"phrase":"radical agenda","category":"right","reason":"Emotionally charged label used in political attacks."},
- {"phrase":"disastrous","category":"loaded","reason":"Loaded adjective implying strong negative judgment."}]
+            // Ask current tab for article content.
+            chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+                const tab = tabs[0];
+                if (!tab) return;
+                chrome.tabs.sendMessage(tab.id, {
+                    type: "SUBTEXT_GET_ARTICLE"
+                });
+            });
+        });
+        return;
+    }
+    
+    // 3. Content script sent back article.
+    if (msg.type === "SUBTEXT_ARTICLE_DATA") {
+        getApiSettings(async (hasKey, apiKey, model) => {
+            if (!hasKey) {
+                sendToPanel({
+                    type: "SUBTEXT_HAS_API_KEY",
+                    payload: { hasKey: false }
+                });
+                openOptionsPage();
+                return;
+            }
 
-Text:
-${article_text}
-`;
+            const art = msg.payload || {};
+            const articleText = art.text || art.excerpt || "";
 
-        askOpenAI(prompt)
-            .then(res => sendResponse({ ...res, title }))
-            .catch(err => sendResponse({ ok: false, error: err.message }));
+            let llmResult = {
+                bullet_points: [],
+                bias_excerpt_html: "",
+                indicators: []
+            }
+            
+            // 3a. Call bias model with extracted article.
+            try {
+                llmResult = await callBiasModel({
+                    apiKey,
+                    model,
+                    article: articleText
+                });
+            } catch (err) {
+                console.warn("LLM call failed:", err);
+            }
 
-        return true; // Keep the message channel open for async sendResponse.
+            // 3b. Tell the tab to highlight.
+            const tabId = sender?.tab?.id;
+            const annotations = (llmResult.indicators || []).map(ind => ({
+                phrase: ind.phrase,
+                category: ind.bias,
+                reason: ind.reason || "Possible bias"
+            }));
+
+            if (tabId) {
+                // New style, HTML spans.
+                chrome.tabs.sendMessage(tabId, {
+                    type: "SUBTEXT_APPLY_BIAS_HTML",
+                    payload: {
+                        bias_excerpt_html: llmResult.bias_excerpt_html || "",
+                        indicators: llmResult.indicators || []
+                    }
+                });
+
+                // Old style, DOM-walk.
+                chrome.tabs.sendMessage(tabId, {
+                    type: "APPLY_HIGHLIGHTS",
+                    annotations
+                });
+            } else {
+                // Fallback to active tab.
+                chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+                    const tab = tabs[0];
+                    if (!tab) return;
+
+                    chrome.tabs.sendMessage(tab.id, {
+                        type: "SUBTEXT_APPLY_BIAS_HTML",
+                        payload: {
+                            bias_excerpt_html: llmResult.bias_excerpt_html || "",
+                            indicators: llmResult.indicators || []
+                        }
+                    });
+
+                    chrome.tabs.sendMessage(tab.id, {
+                        type: "APPLY_HIGHLIGHTS",
+                        annotations
+                    });
+                });
+            }
+
+            // 3c. Tell the side panel to render.
+            sendToPanel({
+                type: "SUBTEXT_RESULT",
+                payload: {
+                    title: art.title || "Untitled article",
+                    source: art.source || "",
+                    url: art.url || "",
+                    bulletPoints: llmResult.bullet_points || [],
+                    biasExcerptHtml: llmResult.bias_excerpt_html || art.excerpt || "No excerpt available.",
+                    indicators: llmResult.indicators || [],
+                    sourceInfo: {
+                        name: art.source || "Unknown source",
+                        bias: "Unknown",
+                        credibility: "Unknown",
+                        provider: "Subtext (LLM)"
+                    }
+                }
+            });
+        });
+        
+        return true;
+    }
+
+    if (msg.type === "SUBTEXT_OPEN_SETTINGS") {
+        openOptionsPage();
+    }
+
+    if (msg.type === "SUBTEXT_OPEN_CONTEXT") {
+        chrome.tabs.create({ url: "https://www.google.com/" });
     }
 });
