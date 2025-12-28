@@ -15,6 +15,7 @@ const analyzeBtn = document.getElementById("btn-start-analyze");
 // -- Page 2 : Results Page --
 const titleEl = document.getElementById("article-header-title");
 const sourceEl = document.getElementById("article-header-source");
+const articlePillEl = document.getElementById("article-header-bias-pill");
 const linkEl = document.getElementById("article-header-link");
 const analyzingCard = document.getElementById("analyzing-card");
 const analyzingCardImg = document.getElementById("analyzing-card-icon-img");
@@ -167,15 +168,15 @@ function renderSourceAnalysis(info) {
     if (!info) return;
     if (sourceNameEl && info.name) sourceNameEl.textContent = info.name;
 
+    // source pill
     if (sourcePillEl) {
-        sourcePillEl.className = "source-section-bias-pill";
         if (info.bias) {
             sourcePillEl.textContent = info.bias;
             const lower = info.bias.toLowerCase();
             if (lower.includes("left")) {
-                sourcePillEl.classList.add("source-section-bias-pill--left");
+                sourcePillEl.classList.add("bias-pill--left");
             } else if (lower.includes("right")) {
-                sourcePillEl.classList.add("source-section-bias-pill--right");
+                sourcePillEl.classList.add("bias-pill--right");
             } else {
                 sourcePillEl.style.background = "var(--color-gray-100, #eef2f7)";
                 sourcePillEl.style.color = "var(--color-gray-700, #334155)";
@@ -195,6 +196,24 @@ function renderSourceAnalysis(info) {
 
     if (sourceProviderEl) {
         sourceProviderEl.textContent = info.provider ? `via ${info.provider}` : "";
+    }
+
+    // article header pill
+    if (articlePillEl) {
+        if (info.bias) {
+            articlePillEl.textContent = info.bias;
+            const lower = info.bias.toLowerCase();
+            if (lower.includes("left")) {
+                articlePillEl.classList.add("bias-pill--left");
+            } else if (lower.includes("right")) {
+                articlePillEl.classList.add("bias-pill--right");
+            } else {
+                articlePillEl.style.background = "var(--color-gray-400, oklch(.707 .022 261.325))";
+                articlePillEl.style.color = "#fff";
+            }
+        } else {
+            articlePillEl.textContent = "Unknown";
+        }
     }
 }
 

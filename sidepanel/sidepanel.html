@@ -57,9 +57,11 @@
             </div>
 
             <!-- analyze button -->
-            <button id="btn-start-analyze" class="actions-section-primary btn-start-analyze">
-                Analyze Article
-            </button>
+            <div class="analyze-button">
+                <button id="btn-start-analyze" class="actions-section-primary btn-start-analyze">
+                    Analyze Article
+                </button>
+            </div>
         </main>
 
         <!-- RESULTS PAGE -->
@@ -70,7 +72,7 @@
 
                 <div class="article-header-meta">
                     <span id="article-header-source" class="article-header-source"></span>
-                    <span class="article-header-bias-pill"></span>
+                    <span id="article-header-bias-pill" class="bias-pill"></span>
                 </div>
 
                 <a
@@ -148,7 +150,7 @@
 
                 <div class="source-section-row">
                     <span id="source-section-name" class="source-section-name"></span>
-                    <span id="source-section-bias-pill" class="source-section-bias-pill"></span>
+                    <span id="source-section-bias-pill" class="bias-pill"></span>
                 </div>
 
                 <div class="source-section-meta-row" style="margin-bottom: 5px;">
