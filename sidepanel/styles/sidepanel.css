@@ -278,8 +278,6 @@
     display: grid;
     place-items: center;
     background: #fff;
-    border: 1px solid rgba(0, 0, 0, 0.04);
-    border-radius: 10px;
     font-size: 12px;
     font-weight: 600;
 }
@@ -293,15 +291,14 @@
 .analyzing-card-body {
     display: flex;
     flex-direction: column;
-    gap: 3px;
 }
 
 .analyzing-card-label {
     display: flex;
     align-items: center;
-    gap: 4px;
     font-size: 0.7rem;
     color: var(--color-gray-500, oklch(.551 .027 264.364));
+    margin-bottom: 0px;
 }
 
 .analyzing-card-article-title {
@@ -407,7 +404,6 @@ font-size: 0.68rem;
     display: flex;
     align-items: center;
     gap: 16px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.03);
     padding: 10px 0 4px;
     flex-wrap: wrap;
 }

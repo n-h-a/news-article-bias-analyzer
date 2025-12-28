@@ -17,6 +17,8 @@ const titleEl = document.getElementById("article-header-title");
 const sourceEl = document.getElementById("article-header-source");
 const linkEl = document.getElementById("article-header-link");
 const analyzingCard = document.getElementById("analyzing-card");
+const analyzingCardImg = document.getElementById("analyzing-card-icon-img");
+const analyzingCardLabel = document.getElementById("analyzing-card-label");
 const analyzingArticleTitle = document.getElementById("analyzing-card-article-title");
 
 const summaryList = document.getElementById("summary-section-list");
@@ -26,6 +28,7 @@ const biasIndicatorsList = document.getElementById("bias-indicators-section-list
 const sourceNameEl = document.getElementById("source-section-name");
 const sourcePillEl = document.getElementById("source-section-bias-pill");
 const sourceCredEl = document.getElementById("source-section-credibility");
+const sourceConfEl = document.getElementById("source-section-confidence")
 const sourceProviderEl = document.getElementById("source-section-provider");
 
 // -- actions --
@@ -45,6 +48,14 @@ function showResultsPage() {
     if (pageStart) pageStart.classList.remove("page--active");
 }
 
+// ========== HELPERS ==========
+function faviconURL(u) {
+    const url = new URL(chrome.runtime.getURL("/_favicon/"));
+    url.searchParams.set("pageUrl", u);
+    url.searchParams.set("size", "32");
+    return url.toString();
+}
+
 // ========== RENDER HELPERS ==========
 function renderDetectedArticle(data = {}) {
     const { title, source, url } = data;
@@ -61,6 +72,23 @@ function renderDetectedArticle(data = {}) {
     if (linkEl && url) {
         linkEl.textContent = url;
         linkEl.href = url;
+    }
+}
+
+function renderAnalysisCard(data = {}) {
+    const { title, source, url } = data;
+
+    if (analyzingArticleTitle) {
+        analyzingArticleTitle.textContent = title || 'Loading...';
+    }
+
+    if (analyzingCardLabel) {
+        analyzingCardLabel.textContent = source || "Analyzing full article";
+    }
+
+    if (analyzingCardImg && url) {
+        const sourceIcon = faviconURL(url);
+        analyzingCardImg.src = sourceIcon || analyzingCardImg.src;
     }
 }
 
@@ -161,6 +189,10 @@ function renderSourceAnalysis(info) {
         sourceCredEl.textContent = `Credibility: ${info.credibility}`;
     }
 
+    if (sourceConfEl && info.confidence) {
+        sourceConfEl.textContent = `Confidence: ${info.confidence}`;
+    }
+
     if (sourceProviderEl) {
         sourceProviderEl.textContent = info.provider ? `via ${info.provider}` : "";
     }
@@ -241,9 +273,7 @@ chrome.runtime.onMessage.addListener((msg) => {
             linkEl.href = res.url;
         }
 
-        if (analyzingArticleTitle) {
-            analyzingArticleTitle.textContent = res.title || 'Loading...';
-        }
+        renderAnalysisCard({ title: res.title, source: res.source, url: res.url });
         renderSummary(res.bulletPoints);
         renderBiasExcerpt(res.excerpt, "");
         renderBiasIndicators(res.indicators);

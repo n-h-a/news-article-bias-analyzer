@@ -22,7 +22,7 @@ function sendToPanel(msg) {
 }
 
 // ========== LLM CALL ==========
-async function callBiasModel({ apiKey, model, article }) {
+async function callBiasModel({ apiKey, model, articleTitle, articleUrl, articleSource, articleText }) {
     const endpoint = "https://api.openai.com/v1/chat/completions";
 
     const system = `
@@ -39,13 +39,20 @@ You are a media analysis assistant. Read the article and return JSON in this exa
   ],
   "indicators": [
     { "phrase": "exact phrase from article", "bias": "left|right|loaded", "reason": "short explanation" }
-  ]
+  ],
+  "source_analysis": {
+    "leaning": "Left|Center-left|Center|Center-right|Right|Mixed|Unknown",
+    "confidence": "High|Medium|Low",
+    "credibility": "High|Medium|Low|Unknown",
+  }
 }
 
 Rules:
 - Stay neutral, factual, concise.
 - ALWAYS return 6 bullet_points, 1–2 sentences each.
 - indicators must match exact article text and include a brief reason.
+- source_analysis should describe typical editorial leaning of the outlet, not the intent of individual journalists.
+- If you are unsure, use leaning="Unknown" with confidence="Low".
 - Output valid JSON only, no code fences.
 
 Examples:
@@ -58,8 +65,11 @@ Examples:
     `.trim();
 
     const user = `
+Title: ${articleTitle || "Unknown"}
+URL: ${articleUrl || "Unknown"}
+Source: ${articleSource || "Unknown"}
 Article:
-${article}
+${articleText}
     `.trim();
 
     const body = {
@@ -96,8 +106,12 @@ ${article}
     // Default Structure
     let parsed = {
         bullet_points: [],
-        // bias_excerpt_html: "",
-        indicators: []
+        indicators: [],
+        source_analysis: {
+            leaning: "Unknown",
+            confidence: "Low",
+            credibility: "Unknown"
+        }
     };
 
     try {
@@ -110,6 +124,10 @@ ${article}
 
     if (!Array.isArray(parsed.indicators)) {
         parsed.indicators = [];
+    }
+
+    if (!parsed.source_analysis || typeof parsed.source_analysis !== "object") {
+        parsed.source_analysis = { leaning: "Unknown", confidence: "Low", credibility: "Unknown" };
     }
 
     return parsed;
@@ -165,6 +183,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
 
             const art = msg.payload || {};
+            const articleTitle = art.title || "Untitled article";
+            const articleUrl = art.url || "";
+            const articleSource = art.source || "";
             const articleText = art.text || "";
 
             let llmResult = {
@@ -178,27 +199,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 llmResult = await callBiasModel({
                     apiKey,
                     model,
-                    article: articleText
+                    articleTitle,
+                    articleUrl,
+                    articleSource,
+                    articleText,
                 });
             } catch (err) {
                 console.warn("LLM call failed:", err);
             }
 
             // 3b. Tell the side panel to render.
+            const sourceAnalysis = llmResult.source_analysis || {};
             sendToPanel({
                 type: "SUBTEXT_RESULT",
                 payload: {
-                    title: art.title || "Untitled article",
-                    url: art.url || "",
-                    source: art.source || "",
+                    title: articleTitle,
+                    url: articleUrl,
+                    source: articleSource,
                     excerpt: art.excerpt || "",
                     bulletPoints: llmResult.bullet_points || [],
-                    // biasExcerptHtml: llmResult.bias_excerpt_html || art.excerpt || "No excerpt available.",
                     indicators: llmResult.indicators || [],
                     sourceInfo: {
                         name: art.source || "Unknown source",
-                        bias: "Unknown",
-                        credibility: "Unknown",
+                        bias: sourceAnalysis.leaning || "Unknown",
+                        credibility: sourceAnalysis.credibility || "Unknown",
+                        confidence: sourceAnalysis.confidence || "Low",
                         provider: "Subtext (LLM)"
                     }
                 }

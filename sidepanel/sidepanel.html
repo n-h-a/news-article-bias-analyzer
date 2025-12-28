@@ -87,10 +87,10 @@
             <!-- analyzing card -->
             <section id="analyzing-card" class="analyzing-card">
                 <div class="analyzing-card-icon">
-                    <img src="../icons/source.png" alt="source" class="analyzing-card-icon-img">
+                    <img id="analyzing-card-icon-img" src="../icons/source.png" alt="source" class="analyzing-card-icon-img">
                 </div>
                 <div class="analyzing-card-body">
-                    <p class="analyzing-card-label">
+                    <p id="analyzing-card-label" class="analyzing-card-label">
                         🌐 Analyzing full article
                     </p>
                     <p id="analyzing-card-article-title" class="analyzing-card-article-title"></p>
@@ -151,12 +151,14 @@
                     <span id="source-section-bias-pill" class="source-section-bias-pill"></span>
                 </div>
 
-                <div class="source-section-meta-row">
-                    <span id="source-section-credibility" class="source-section-meta">CREDIBILITY:</span>
-                    <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
+                <div class="source-section-meta-row" style="margin-bottom: 5px;">
+                    <span id="source-section-credibility" class="source-section-meta">Credibility:</span>
                 </div>
 
-                <div class="source-section-bottom-line"></div>
+                <div class="source-section-meta-row">
+                    <span id="source-section-confidence" class="source-section-meta">Confidence:</span>
+                    <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
+                </div>
             </section>
 
             <!-- actions -->
