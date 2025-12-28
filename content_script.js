@@ -2,15 +2,30 @@
 
 // ========== ARTICLE EXTRACTION ==========
 function extractArticle() {
-    const title =
-        document.querySelector("meta[property='og:title']")?.content || 
+    const url = location.href;
+
+    let title = 
+        document.querySelector("meta[property='og:title']")?.content ||
         document.title ||
         "";
+    let source = location.hostname.replace(/^www\./, "");
+    let text = document.body ? document.body.innerText : "";
+    let excerpt = clipToSentence(text.slice(0, 420));
 
-    const url = location.href;
-    const source = location.hostname.replace(/^www\./, "");
-    const text = document.body ? document.body.innerText : "";
-    const excerpt = text.slice(0, 400);
+    try {
+        const documentClone = document.cloneNode(true);
+        const reader = new Readability(documentClone);
+        const article = reader.parse();
+
+        if (article) {
+            title = article.title || title;
+            source = article.siteName || source;
+            text = article.textContent || text;
+            excerpt = article.excerpt 
+                ? clipToSentence(article.excerpt) 
+                : clipToSentence(text.slice(0, 600));
+        }
+    } catch (e) {}
 
     return { title, url, source, text, excerpt };
 }
@@ -85,6 +100,15 @@ function categoryClass(cat) {
     return "bias-loaded";
 }
 
+function clipToSentence(s, maxLen = 420) {
+    const t = (s || "").replace(/\s+/g, " ").trim();
+    if (t.length <= maxLen) return t;
+    const cut = t.slice(0, maxLen);
+    const idx = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+    if (idx > 120) return cut.slice(0, idx + 1).trim();
+    return cut.trim() + "...";
+}
+
 function isSkippableNode(node) {
     const p = node.parentNode;
     if (!p) return true;
@@ -96,7 +120,45 @@ function isSkippableNode(node) {
     );
 }
 
-// ========== OLD HIGHLIGHTER ==========
+function serializeWithHighlights(rootEl) {
+    const out = [];
+    
+    function esc(s) {
+        return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function walk(node) {
+        if (!node) return;
+
+        if (node.nodeType === Node.TEXT_NODE) {
+            out.push(esc(node.nodeValue || ""));
+            return;
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+        const el = node;
+        if (el.tagName === "SPAN" && el.classList.contains("bias-tag")) {
+            const className = esc(el.className || "bias-tag");
+            const reason = esc(el.getAttribute("data-reason") || "");
+            const text = esc(el.textContent || "");
+            out.push(`<span class="${className}" data-reason="${reason}">${text}</span>`);
+            return;
+        }
+
+        for (const child of el.childNodes) walk(child);
+    }
+
+    walk(rootEl);
+    return out.join("");
+}
+
+// ========== HIGHLIGHTER ==========
 function highlightBias(annotations) {
     injectBiasStylesOnce();
 
@@ -114,6 +176,9 @@ function highlightBias(annotations) {
 
     // Sort by longer phrases first to ensure regex tests them.
     items.sort((a, b) => b.phrase.length - a.phrase.length);
+
+    // Build fast lookup table (lowercased phrase -> item).
+    const itemMap = new Map(items.map(it => [it.phrase.toLowerCase(), it]));
 
     // Build case insensitive global regex that matches any of the phrases.
     const escaped = items.map(x => escapeRegExp(x.phrase));
@@ -159,7 +224,7 @@ function highlightBias(annotations) {
             }
 
             // Build the highlighted span.
-            const item = items.find(it => it.phrase.toLowerCase() === match.toLowerCase());
+            const item = itemMap.get(match.toLowerCase());
             const span = document.createElement("span");
             span.className = "bias-tag " + categoryClass(item?.category);
             span.textContent = text.slice(start, end);
@@ -189,54 +254,37 @@ function clearBiasHighlights() {
     })
 }
 
-// ========== NEW LLM STYLE HIGHLIGHTER ==========
-function applyBiasFromLLM(htmlSnippet) {
-    if (!htmlSnippet) return;
-    injectBiasStylesOnce();
+// ========== RETRIEVE EXCERPT ==========
+function getBestHighlightedExcerpt() { 
+    const highlightSelector = "span.bias-tag";
+    const candidates = Array.from(document.querySelectorAll("p"));
 
-    const tmp = document.createElement("div");
-    tmp.innerHTML = htmlSnippet;
+    let bestEl = null;
+    let bestCount = 0;
 
-    const spans = tmp.querySelectorAll(".bias-left, .bias-right, .bias-loaded, .bias-tag");
-    spans.forEach(span => {
-        const phrase = span.textContent.trim();
-        const reason = span.getAttribute("data-reason") || "Bias-indicative phrase";
-        const cls = span.classList.contains("bias-left")
-            ? "bias-left"
-            : span.classList.contains("bias-right")
-            ? "bias-right"
-            : "bias-loaded";
+    for (const p of candidates) {
+        const text = (p.innerText || "").trim();
+        
+        const count = p.querySelectorAll(highlightSelector).length;
+        if (count === 0) continue; 
 
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-            acceptNode(node) {
-                return isSkippableNode(node)
-                    ? NodeFilter.FILTER_REJECT
-                    : NodeFilter.FILTER_ACCEPT;
-            }
-        });
-
-        while (walker.nextNode()) {
-            const node = walker.currentNode;
-            const idx = node.nodeValue.toLowerCase().indexOf(phrase.toLowerCase());
-            if (idx === -1) continue;
-
-            const text = node.nodeValue;
-            const before = text.slice(0, idx);
-            const match = text.slice(idx, idx + phrase.length);
-            const after = text.slice(idx + phrase.length);
-            const frag = document.createDocumentFragment();
-            if (before) frag.appendChild(document.createTextNode(before));
-            const realSpan = document.createElement("span");
-            realSpan.className = "bias-tag " + cls;
-            realSpan.textContent = match;
-            realSpan.setAttribute("data-reason", reason);
-            frag.appendChild(realSpan);
-            if (after) frag.appendChild(document.createTextNode(after));
-
-            node.parentNode.replaceChild(frag, node);
-            break;
+        if (count > bestCount) {
+            bestEl = p;
+            bestCount = count;
+        } else if (count === bestCount && bestEl) {
+            const bestText = (bestEl.innerText || "").trim();
+            if (text.length > bestText.length) bestEl = p;
         }
-    });
+    }
+
+    if (!bestEl) {
+        return { excerpt: "", excerptHtml: "", highlightCount: 0 };
+    }  
+
+    let excerpt = (bestEl.innerText || "").trim();
+    let excerptHtml = serializeWithHighlights(bestEl);
+
+    return { excerpt, excerptHtml, highlightCount: bestCount };
 }
 
 // ========== MESSAGE HANDLER ==========
@@ -251,14 +299,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return true;
     }
 
-    if (msg.type === "SUBTEXT_APPLY_BIAS_HTML") {
-        applyBiasFromLLM(msg.payload?.bias_excerpt_html || "");
-        return;
-    }
-
     if (msg.type === "APPLY_HIGHLIGHTS" && Array.isArray(msg.annotations)) {
         clearBiasHighlights();
         highlightBias(msg.annotations);
+
+        const best = getBestHighlightedExcerpt();
+        if (best.excerptHtml) {
+            chrome.runtime.sendMessage({
+                type: "SUBTEXT_EXCERPT_UPDATE",
+                payload: {
+                    excerpt: best.excerpt,
+                    excerptHtml: best.excerptHtml,
+                    highlightCount: best.highlightCount
+                }
+            });
+        }
+
         sendResponse({ ok: true });
         return true;
     }
@@ -267,13 +323,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         clearBiasHighlights();
         sendResponse({ ok: true });
         return true;
-    }
-
-    if (msg.type === "APPLY_BIAS") {
-        if (Array.isArray(msg.annotations)) {
-            clearBiasHighlights();
-            highlightBias(msg.annotations);
-        }
-        return;
     }
 });

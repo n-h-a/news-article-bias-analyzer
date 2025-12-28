@@ -37,7 +37,6 @@ You are a media analysis assistant. Read the article and return JSON in this exa
     "1–2 sentence key point 5",
     "1–2 sentence key point 6"
   ],
-  "bias_excerpt_html": "<p>...with <span class='bias-left' data-reason='...'>biased phrase</span> or <span class='bias-right' data-reason='...'>loaded phrase</span>...</p>",
   "indicators": [
     { "phrase": "exact phrase from article", "bias": "left|right|loaded", "reason": "short explanation" }
   ]
@@ -46,8 +45,6 @@ You are a media analysis assistant. Read the article and return JSON in this exa
 Rules:
 - Stay neutral, factual, concise.
 - ALWAYS return 6 bullet_points, 1–2 sentences each.
-- Use only: bias-left, bias-right, bias-loaded.
-- bias_excerpt_html should be 1–2 short paragraphs with annotated spans.
 - indicators must match exact article text and include a brief reason.
 - Output valid JSON only, no code fences.
 
@@ -99,7 +96,7 @@ ${article}
     // Default Structure
     let parsed = {
         bullet_points: [],
-        bias_excerpt_html: "",
+        // bias_excerpt_html: "",
         indicators: []
     };
 
@@ -168,11 +165,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
 
             const art = msg.payload || {};
-            const articleText = art.text || art.excerpt || "";
+            const articleText = art.text || "";
 
             let llmResult = {
                 bullet_points: [],
-                bias_excerpt_html: "",
+                // bias_excerpt_html: "",
                 indicators: []
             }
             
@@ -187,59 +184,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 console.warn("LLM call failed:", err);
             }
 
-            // 3b. Tell the tab to highlight.
-            const tabId = sender?.tab?.id;
-            const annotations = (llmResult.indicators || []).map(ind => ({
-                phrase: ind.phrase,
-                category: ind.bias,
-                reason: ind.reason || "Possible bias"
-            }));
-
-            if (tabId) {
-                // New style, HTML spans.
-                chrome.tabs.sendMessage(tabId, {
-                    type: "SUBTEXT_APPLY_BIAS_HTML",
-                    payload: {
-                        bias_excerpt_html: llmResult.bias_excerpt_html || "",
-                        indicators: llmResult.indicators || []
-                    }
-                });
-
-                // Old style, DOM-walk.
-                chrome.tabs.sendMessage(tabId, {
-                    type: "APPLY_HIGHLIGHTS",
-                    annotations
-                });
-            } else {
-                // Fallback to active tab.
-                chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-                    const tab = tabs[0];
-                    if (!tab) return;
-
-                    chrome.tabs.sendMessage(tab.id, {
-                        type: "SUBTEXT_APPLY_BIAS_HTML",
-                        payload: {
-                            bias_excerpt_html: llmResult.bias_excerpt_html || "",
-                            indicators: llmResult.indicators || []
-                        }
-                    });
-
-                    chrome.tabs.sendMessage(tab.id, {
-                        type: "APPLY_HIGHLIGHTS",
-                        annotations
-                    });
-                });
-            }
-
-            // 3c. Tell the side panel to render.
+            // 3b. Tell the side panel to render.
             sendToPanel({
                 type: "SUBTEXT_RESULT",
                 payload: {
                     title: art.title || "Untitled article",
-                    source: art.source || "",
                     url: art.url || "",
+                    source: art.source || "",
+                    excerpt: art.excerpt || "",
                     bulletPoints: llmResult.bullet_points || [],
-                    biasExcerptHtml: llmResult.bias_excerpt_html || art.excerpt || "No excerpt available.",
+                    // biasExcerptHtml: llmResult.bias_excerpt_html || art.excerpt || "No excerpt available.",
                     indicators: llmResult.indicators || [],
                     sourceInfo: {
                         name: art.source || "Unknown source",
@@ -249,6 +203,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     }
                 }
             });
+
+            // 3c. Tell the tab to highlight.
+            const tabId = sender?.tab?.id;
+            const annotations = (llmResult.indicators || []).map(ind => ({
+                phrase: ind.phrase,
+                category: ind.bias,
+                reason: ind.reason || "Possible bias"
+            }));
+
+            if (tabId) {
+                // Apply highlights by DOM-walk.
+                chrome.tabs.sendMessage(tabId, {
+                    type: "APPLY_HIGHLIGHTS",
+                    annotations
+                });
+            } else {
+                // Fallback to active tab.
+                chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+                    const tab = tabs[0];
+                    if (!tab) return;
+                    
+                    chrome.tabs.sendMessage(tab.id, {
+                        type: "APPLY_HIGHLIGHTS",
+                        annotations
+                    });
+                });
+            }
         });
         
         return true;

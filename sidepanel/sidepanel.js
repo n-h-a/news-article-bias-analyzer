@@ -83,13 +83,19 @@ function renderSummary(bulletPoints) {
     });
 }
 
-function renderBiasExcerpt(html) {
+function renderBiasExcerpt(text, html) {
     if (!biasExcerpt) return;
-    if (!html) {
+
+    if (html) {
+        biasExcerpt.innerHTML = html;
+        return;
+    }
+
+    if (!text) {
         biasExcerpt.textContent = "No excerpt available for this article.";
         return;
     }
-    biasExcerpt.innerHTML = html;
+    biasExcerpt.textContent = text;
 }
 
 function renderBiasIndicators(indicators) {
@@ -239,11 +245,16 @@ chrome.runtime.onMessage.addListener((msg) => {
             analyzingArticleTitle.textContent = res.title || 'Loading...';
         }
         renderSummary(res.bulletPoints);
-        renderBiasExcerpt(res.biasExcerptHtml);
+        renderBiasExcerpt(res.excerpt, "");
         renderBiasIndicators(res.indicators);
         renderSourceAnalysis(res.sourceInfo);
 
         showResultsPage();
+    }
+
+    if (msg.type === "SUBTEXT_EXCERPT_UPDATE" && msg.payload?.excerptHtml) {
+        const p = msg.payload || {};
+        renderBiasExcerpt(p.excerpt || "", p.excerptHtml || "");
     }
 });
 
