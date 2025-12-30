@@ -9,16 +9,6 @@ function getApiSettings(cb) {
     });
 }
 
-function openSidePanel() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tab = tabs?.[0];
-        if (!tab?.id) return;
-        chrome.sidePanel.open({ tabId: tab.id });
-    });
-
-
-}
-
 function openOptionsPage() {
     if (chrome.runtime.openOptionsPage) {
         chrome.runtime.openOptionsPage();
@@ -144,13 +134,7 @@ ${articleText}
 }
 
 // ========== MESSAGE HUB ==========
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    // Open side panel.
-    if (msg.type === "OPEN_SIDE_PANEL") {
-        openSidePanel();
-        return;
-    }
-   
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {   
     // 1. Panel asks if API key exists.
     if (msg.type === "SUBTEXT_CHECK_API_KEY") {
         getApiSettings(hasKey => {
@@ -272,7 +256,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 });
             }
         });
-        
         return true;
     }
 

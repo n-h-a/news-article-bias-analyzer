@@ -23,17 +23,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         statusEl.textContent = 'API key removed';
     });
 
-    // If checkbox is clicked, set it to true if checked, otherwise false.
-    document.getElementById('toggle-onscreen-button').addEventListener("change", async (e) => {
-        await chrome.storage.local.set({ toggle_onscreen_button: e.target.checked });
-    });
-
     // Load previously saved model from storage and prefill input box when Options page opens.
-    chrome.storage.local.get(console.log);
     const { openai_model } = await chrome.storage.local.get(['openai_model']);
     if (openai_model) modelEl.value = openai_model;
-
-    const { toggle_onscreen_button } = await chrome.storage.local.get(['toggle_onscreen_button']);
-    checkboxEl.checked = !!toggle_onscreen_button;
 });
     

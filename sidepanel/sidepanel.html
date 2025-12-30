@@ -20,7 +20,8 @@
         </header>
 
         <!-- STARTING PAGE -->
-        <main id="start-page" class="page page--active">
+        <!-- <main id="start-page" class="page page--active"> -->
+        <main id="start-page" class="page">
             <!-- detected top -->
             <div class="detected-top">
                 <div class="detected-top-play-circle">▶</div>
@@ -65,7 +66,8 @@
         </main>
 
         <!-- RESULTS PAGE -->
-        <main id="results-page" class="results-page page">
+        <!-- <main id="results-page" class="results-page page"> -->
+        <main id="results-page" class="results-page page page--active">
             <!-- article header -->
             <section class="article-header">
                 <h1 id="article-header-title" class="article-header-title"></h1>
@@ -103,9 +105,46 @@
             <section id="summary-section" class="summary-section">
                 <h2 class="summary-section-title">AI SUMMARY OF FULL ARTICLE</h2>
                 <hr class="divider"/>
-                <p class="summary-section-subtitle">Generated from complete article analysis</p>
 
-                <ul id="summary-section-list" class="summary-section-list"></ul>
+                <!-- loading state -->
+                <div id="summary-section-loading" class="summary-section-loading">
+                    <div class="summary-section-loading-bar-row">
+                        <progress id="summary-section-loading-bar" class="summary-section-loading-bar" aria-label="Analyzing article..." value="30" max="100">30%</progress>
+                        <label id="summary-section-loading-bar-percentage-label" class="summary-section-loading-bar-percentage-label" for="summary-section-loading-bar">30%</label>
+                    </div>
+                    <label id="summary-section-loading-bar-label" class="summary-section-loading-bar-label" for="summary-section-loading-bar">Generating Summary...</label>
+                    <div class="skeleton">
+                        <div class="skel-line" style="grid-row: 1;"></div>
+                        <div class="skel-stack">
+                            <div class="skel-bar w100"></div>
+                            <div class="skel-bar w75"></div>
+                        </div>
+
+                        <div class="skel-line" style="grid-row: 2;"></div>
+                        <div class="skel-stack">
+                            <div class="skel-bar w80"></div>
+                            <div class="skel-bar w100"></div>
+                        </div>   
+
+                        <div class="skel-line" style="grid-row: 3;"></div>
+                        <div class="skel-stack">
+                            <div class="skel-bar w75"></div>
+                            <div class="skel-bar w80"></div>
+                        </div>
+
+                        <div class="skel-line" style="grid-row: 4;"></div>
+                        <div class="skel-stack">
+                            <div class="skel-bar w90"></div>
+                            <div class="skel-bar w60"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- content state -->
+                <div id="summary-section-content" class="summary-section-content hidden">
+                    <p class="summary-section-subtitle">Generated from complete article analysis</p>
+                    <ul id="summary-section-list" class="summary-section-list"></ul>
+                </div>
             </section>
 
             <!-- bias detection -->
@@ -113,25 +152,33 @@
                 <h2 class="bias-section-title">BIAS DETECTION</h2>
                 <hr class="divider"/>
 
-                <h3 class="bias-section-subtitle">ARTICLE EXCERPT</h3>
-
-                <div class="bias-section-excerpt-card">
-                    <p id="bias-section-excerpt"></p>
+                <!-- loading state -->
+                <div id="bias-section-loading" class="loading-section">
+                    <div class="loader"></div>
+                    <p class="loading-section-text">Analyzing language patterns...</p>
                 </div>
 
-                <!-- legend -->
-                <div class="bias-section-legend">
-                    <div class="bias-section-legend-item">
-                        <span class="bias-section-legend-swatch bias-section-legend-left"></span>
-                        <span>Left bias</span>
+                <!-- content state -->
+                <div id="bias-section-content" class="bias-section-content hidden">
+                    <h3 class="bias-section-subtitle">ARTICLE EXCERPT</h3>
+
+                    <div class="bias-section-excerpt-card">
+                        <p id="bias-section-excerpt"></p>
                     </div>
-                    <div class="bias-section-legend-item">
-                        <span class="bias-section-legend-swatch bias-section-legend-right"></span>
-                        <span>Right bias</span>
-                    </div>
-                    <div class="bias-section-legend-item">
-                        <span class="bias-section-legend-swatch bias-section-legend-loaded"></span>
-                        <span>Loaded language</span>
+
+                    <div class="bias-section-legend">
+                        <div class="bias-section-legend-item">
+                            <span class="bias-section-legend-swatch bias-section-legend-left"></span>
+                            <span>Left bias</span>
+                        </div>
+                        <div class="bias-section-legend-item">
+                            <span class="bias-section-legend-swatch bias-section-legend-right"></span>
+                            <span>Right bias</span>
+                        </div>
+                        <div class="bias-section-legend-item">
+                            <span class="bias-section-legend-swatch bias-section-legend-loaded"></span>
+                            <span>Loaded language</span>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -140,7 +187,17 @@
             <section id="bias-indicators-section" class="bias-indicators-section">
                 <h3 class="bias-indicators-section-title">DETECTED BIAS INDICATORS</h3>
                 <hr class="divider"/>
-                <div id="bias-indicators-section-list" class="bias-indicators-section-list"></div>
+
+                <!-- loading state -->
+                <div id="bias-indicators-section-loading" class="loading-section">
+                    <div class="loader"></div>
+                    <p class="loading-section-text">Detecting bias indicators...</p>
+                </div>
+
+                <!-- content state -->
+                <div id="bias-indicators-section-content" class="bias-indicators-section-content hidden">
+                    <div id="bias-indicators-section-list" class="bias-indicators-section-list"></div>
+                </div>
             </section>
 
             <!-- source analysis -->
@@ -148,18 +205,27 @@
                 <h3 class="source-section-title">SOURCE ANALYSIS</h3>
                 <hr class="divider"/>
 
-                <div class="source-section-row">
-                    <span id="source-section-name" class="source-section-name"></span>
-                    <span id="source-section-bias-pill" class="bias-pill"></span>
+                <!-- loading state -->
+                <div id="source-section-loading" class="loading-section">
+                    <div class="loader"></div>
+                    <p class="loading-section-text">Checking source credibility...</p>
                 </div>
 
-                <div class="source-section-meta-row" style="margin-bottom: 5px;">
-                    <span id="source-section-credibility" class="source-section-meta">Credibility:</span>
-                </div>
+                <!-- content state -->
+                <div id="source-section-content" class="source-section-content hidden">
+                    <div class="source-section-row">
+                        <span id="source-section-name" class="source-section-name"></span>
+                        <span id="source-section-bias-pill" class="bias-pill"></span>
+                    </div>
 
-                <div class="source-section-meta-row">
-                    <span id="source-section-confidence" class="source-section-meta">Confidence:</span>
-                    <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
+                    <div class="source-section-meta-row" style="margin-bottom: 5px;">
+                        <span id="source-section-credibility" class="source-section-meta">Credibility:</span>
+                    </div>
+
+                    <div class="source-section-meta-row">
+                        <span id="source-section-confidence" class="source-section-meta">Confidence:</span>
+                        <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
+                    </div>
                 </div>
             </section>
 

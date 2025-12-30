@@ -202,6 +202,10 @@
     margin: 14px 0 12px;
 }
 
+.hidden {
+    display: none;
+}
+
 /* article header */
 .article-header {
     display: flex;
@@ -300,6 +304,73 @@
     text-transform: uppercase;
 }
 
+/* loading state */
+.summary-section-loading-bar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 20px 0px;
+}
+
+.summary-section-loading-bar {
+    width: 75%;
+    height: 8px;
+    background-color: #cdccd0;
+    border-radius: 10px; 
+}
+.summary-section-loading-bar::-webkit-progress-bar {
+    background-color: #cdccd0;
+    border-radius: 10px;
+}
+.summary-section-loading-bar::-webkit-progress-value {
+    background-color: #000;
+    border-radius: 10px;
+}
+.summary-section-loading-bar::-moz-progress-bar {
+    background-color: #000;
+    border-radius: 10px;
+}
+
+.summary-section-loading-bar-percentage-label {
+    color: var(--color-gray-500, oklch(.551 .027 264.364))
+}
+
+.summary-section-loading-bar-label {
+    font-size: 0.8rem;
+    color: var(--color-gray-500, oklch(.373 .034 259.733));
+    letter-spacing: 0.04em;;
+}
+
+.skeleton {
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    column-gap: 18px;
+    row-gap: 18px;
+    padding-top: 6px;
+    margin: 20px 0px;
+}
+.skel-line {
+    width: 3px;
+    background: #d9dee6;
+    border-radius: 999px;
+    justify-self: center;
+}
+.skel-stack {
+    display: grid;
+    row-gap: 10px;
+}
+.skel-bar {
+    height: 12px;
+    background: #e6eaef;
+    border-radius: 4px;
+}
+.w100 { width: 90%; }
+.w90 { width: 80%; }
+.w80 { width: 70%; }
+.w75 { width: 65%; }
+.w60 { width: 50%; }
+
+/* content state */
 .summary-section-subtitle {
     font-size: 0.68rem;
     font-style: italic;
@@ -325,7 +396,6 @@
     line-height: 1.35;
 }
 
-
 .summary-section-list li::before { /* blue dot */
     width: 6px;
     height: 6px;
@@ -336,6 +406,32 @@
     content: "";
 }
 
+/* loading section */
+.loading-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.loader {
+    border: 1.5px solid var(--color-gray-500, oklch(.551 .027 264.364));
+    border-top: 1.5px solid white;
+    border-radius: 50%;
+    width: 15px;
+    height: 15px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-section-text {
+    font-size: 0.8rem;
+    color: var(--color-gray-500, oklch(.551 .027 264.364));
+}
+
 /* bias section */
 .bias-section {
     border-top: 1px solid rgba(0, 0, 0, 0.035);
@@ -343,6 +439,7 @@
     margin-top: 20px;
 }
 
+/* content state */
 .bias-section-title {
     font-size: 0.7rem;
     font-weight: 500;
