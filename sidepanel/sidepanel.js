@@ -12,12 +12,26 @@ const detectedSourceEl = document.getElementById("detected-article-card-source")
 const detectedUrlEl = document.getElementById("detected-article-card-url");
 const analyzeBtn = document.getElementById("btn-start-analyze");
 
+// -- Loading --
+const summaryLoading = document.getElementById("summary-section-loading");
+const summaryContent = document.getElementById("summary-section-content");
+const biasLoading = document.getElementById("bias-section-loading");
+const biasContent = document.getElementById("bias-section-content");
+const biasIndicatorsLoading = document.getElementById("bias-indicators-section-loading");
+const biasIndicatorsContent = document.getElementById("bias-indicators-section-content");
+const sourceLoading = document.getElementById("source-section-loading");
+const sourceContent = document.getElementById("source-section-content");
+
+const summaryLoadingBar = document.getElementById("summary-section-loading-bar");
+const summaryLoadingBarFill = document.getElementById("summary-section-loading-bar-fill");
+const summaryPctLabel = document.getElementById("summary-section-loading-bar-percentage-label");
+const summaryLabel = document.getElementById("summary-section-loading-bar-label");
+
 // -- Page 2 : Results Page --
 const titleEl = document.getElementById("article-header-title");
 const sourceEl = document.getElementById("article-header-source");
 const articlePillEl = document.getElementById("article-header-bias-pill");
 const linkEl = document.getElementById("article-header-link");
-const analyzingCard = document.getElementById("analyzing-card");
 const analyzingCardImg = document.getElementById("analyzing-card-icon-img");
 const analyzingCardLabel = document.getElementById("analyzing-card-label");
 const analyzingArticleTitle = document.getElementById("analyzing-card-article-title");
@@ -49,12 +63,135 @@ function showResultsPage() {
     if (pageStart) pageStart.classList.remove("page--active");
 }
 
-// ========== HELPERS ==========
-function faviconURL(u) {
-    const url = new URL(chrome.runtime.getURL("/_favicon/"));
-    url.searchParams.set("pageUrl", u);
-    url.searchParams.set("size", "32");
-    return url.toString();
+// ========== LOADING TIMELINE (4 steps, min 1s each) ==========
+let currentRunId = 0;
+let minUiPromise = null;
+let minUiDone = false;
+let analysisDone = false;
+let pendingResult = null;
+
+const LOADING_STEPS = [
+    { label: "Reading article...", pct: 25 },
+    { label: "Analyzing content...", pct: 50 },
+    { label: "Generating summary...", pct: 75} ,
+    { label: "Complete", pct: 100 }
+];
+
+function setLoadingVisible() {
+    setSummaryProgress(0, "");
+    
+    showResultsPage();
+    renderSummary([]);
+    renderBiasExcerpt("");
+    renderBiasIndicators([]);
+
+    if (summaryLoading) summaryLoading.classList.remove("hidden");
+    if (summaryContent) summaryContent.classList.add("hidden");
+    if (biasLoading) biasLoading.classList.remove("hidden");
+    if (biasContent) biasContent.classList.add("hidden");
+    if (biasIndicatorsLoading) biasIndicatorsLoading.classList.remove("hidden");
+    if (biasIndicatorsContent) biasIndicatorsContent.classList.add("hidden");
+    if (sourceLoading) sourceLoading.classList.remove("hidden");
+    if (sourceContent) sourceContent.classList.add("hidden");
+}
+
+function setResultsVisible() {
+    showResultsPage();
+
+    if (summaryContent) summaryContent.classList.remove("hidden");
+    if (summaryLoading) summaryLoading.classList.add("hidden");
+    if (biasContent) biasContent.classList.remove("hidden");
+    if (biasLoading) biasLoading.classList.add("hidden");
+    if (biasIndicatorsContent) biasIndicatorsContent.classList.remove("hidden");
+    if (biasIndicatorsLoading) biasIndicatorsLoading.classList.add("hidden");
+    if (sourceContent) sourceContent.classList.remove("hidden");
+    if (sourceLoading) sourceLoading.classList.add("hidden");
+
+    if (analyzeBtn) analyzeBtn.disabled = false;
+}
+
+function applyResultToUI(res) {
+    if (titleEl && res.title) titleEl.textContent = res.title;
+    if (sourceEl && res.source) sourceEl.textContent = res.source;
+    if (linkEl && res.url) {
+        linkEl.textContent = res.url;
+        linkEl.href = res.url;
+    }
+
+    renderAnalysisCard({ title: res.title, source: res.source, url: res.url });
+    renderSummary(res.bulletPoints);
+    renderBiasExcerpt(res.excerpt, "");
+    renderBiasIndicators(res.indicators);
+    renderSourceAnalysis(res.sourceInfo);
+
+    setResultsVisible();
+}
+
+function setSummaryProgress(pct, label) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    if (summaryLoadingBarFill) summaryLoadingBarFill.style.width = `${clamped.toFixed(2)}%`;
+    if (summaryLoadingBar) summaryLoadingBar.setAttribute("aria-valuenow", String(clamped));
+    if (summaryPctLabel) summaryPctLabel.textContent = `${Math.round(clamped)}%`;
+    if (summaryLabel) summaryLabel.textContent = label || "";
+}
+
+function nextFrame() {
+    return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runMinimumLoadingTimeline(runId) {
+    minUiDone = false;
+
+    setSummaryProgress(0, "");
+    await nextFrame();
+
+    let lastPct = 0;
+
+    for (let i = 0; i < LOADING_STEPS.length; i++) {
+        if (runId !== currentRunId) return;
+
+        const step = LOADING_STEPS[i];
+        const fromPct = lastPct;
+        const toPct = step.pct;
+
+        const start = performance.now();
+        const duration = 500;
+
+        while (true) {
+            if (runId !== currentRunId) return;
+
+            const elapsed = performance.now() - start;
+            const t = Math.min(1, elapsed / duration);
+
+            const pct = fromPct + (toPct - fromPct) * t;
+            setSummaryProgress(pct, step.label);
+
+            if (t >= 1) break;
+            await nextFrame();
+        }
+
+        await sleep(750);
+        lastPct = toPct;
+    }
+
+    if (runId !== currentRunId) return;
+    minUiDone = true;
+    maybeFinalizeRun(runId);
+}
+
+function maybeFinalizeRun(runId) {
+    if (runId !== currentRunId) return;
+    if (!minUiDone) return;
+    if (!analysisDone) return;
+    if (!pendingResult) return;
+
+    applyResultToUI(pendingResult);
+    pendingResult = null;
+    analysisDone = false;
 }
 
 // ========== RENDER HELPERS ==========
@@ -79,14 +216,12 @@ function renderDetectedArticle(data = {}) {
 function renderAnalysisCard(data = {}) {
     const { title, source, url } = data;
 
-    if (analyzingArticleTitle) {
-        analyzingArticleTitle.textContent = title || 'Loading...';
+    if (analyzingArticleTitle) { 
+        analyzingArticleTitle.textContent = title || 'Loading...'; 
     }
-
-    if (analyzingCardLabel) {
-        analyzingCardLabel.textContent = source || "Analyzing full article";
+    if (analyzingCardLabel) { 
+        analyzingCardLabel.textContent = source || "Analyzing full article"; 
     }
-
     if (analyzingCardImg && url) {
         const sourceIcon = faviconURL(url);
         analyzingCardImg.src = sourceIcon || analyzingCardImg.src;
@@ -119,7 +254,7 @@ function renderBiasExcerpt(text, html) {
         biasExcerpt.innerHTML = html;
         return;
     }
-
+    
     if (!text) {
         biasExcerpt.textContent = "No excerpt available for this article.";
         return;
@@ -168,10 +303,11 @@ function renderSourceAnalysis(info) {
     if (!info) return;
     if (sourceNameEl && info.name) sourceNameEl.textContent = info.name;
 
-    // source pill
     if (sourcePillEl) {
         if (info.bias) {
             sourcePillEl.textContent = info.bias;
+            sourcePillEl.classList.remove("bias-pill--left", "bias-pill--right");
+
             const lower = info.bias.toLowerCase();
             if (lower.includes("left")) {
                 sourcePillEl.classList.add("bias-pill--left");
@@ -189,19 +325,18 @@ function renderSourceAnalysis(info) {
     if (sourceCredEl && info.credibility) {
         sourceCredEl.textContent = `Credibility: ${info.credibility}`;
     }
-
     if (sourceConfEl && info.confidence) {
         sourceConfEl.textContent = `Confidence: ${info.confidence}`;
     }
-
     if (sourceProviderEl) {
         sourceProviderEl.textContent = info.provider ? `via ${info.provider}` : "";
     }
 
-    // article header pill
     if (articlePillEl) {
         if (info.bias) {
             articlePillEl.textContent = info.bias;
+            articlePillEl.classList.remove("bias-pill--left", "bias-pill--right");
+
             const lower = info.bias.toLowerCase();
             if (lower.includes("left")) {
                 articlePillEl.classList.add("bias-pill--left");
@@ -217,19 +352,28 @@ function renderSourceAnalysis(info) {
     }
 }
 
-function startAnalyzingUi() {
-    showResultsPage();
-    if (analyzingCard) {
-        analyzingCard.style.removeProperty("display")
-    }
-    renderSummary([]);
-    renderBiasExcerpt("");
-    renderBiasIndicators([]);
+// ========== OTHERS ==========
+function faviconURL(u) {
+    const url = new URL(chrome.runtime.getURL("/_favicon/"));
+    url.searchParams.set("pageUrl", u);
+    url.searchParams.set("size", "32");
+    return url.toString();
 }
 
 // ========== BUTTON EVENTS ==========
-analyzeBtn?.addEventListener("click", () => {
-    startAnalyzingUi();
+analyzeBtn?.addEventListener("click", async () => {
+    analyzeBtn.disabled = true;
+    setLoadingVisible();
+
+    currentRunId++;
+    const runId = currentRunId;
+
+    minUiDone = false;
+    analysisDone = false;
+    pendingResult = null;
+
+    minUiPromise = runMinimumLoadingTimeline(runId);
+    await nextFrame();
 
     chrome.runtime.sendMessage({ type: "SUBTEXT_START_ANALYSIS" });
 });
@@ -285,20 +429,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "SUBTEXT_RESULT") {
         const res = msg.payload || {};
 
-        if (titleEl && res.title) titleEl.textContent = res.title;
-        if (sourceEl && res.source) sourceEl.textContent = res.source;
-        if (linkEl && res.url) {
-            linkEl.textContent = res.url;
-            linkEl.href = res.url;
-        }
+        pendingResult = res;
+        analysisDone = true;
 
-        renderAnalysisCard({ title: res.title, source: res.source, url: res.url });
-        renderSummary(res.bulletPoints);
-        renderBiasExcerpt(res.excerpt, "");
-        renderBiasIndicators(res.indicators);
-        renderSourceAnalysis(res.sourceInfo);
-
-        showResultsPage();
+        maybeFinalizeRun(currentRunId);
     }
 
     if (msg.type === "SUBTEXT_EXCERPT_UPDATE" && msg.payload?.excerptHtml) {

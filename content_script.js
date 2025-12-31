@@ -264,10 +264,9 @@ function getBestHighlightedExcerpt() {
 
     for (const p of candidates) {
         const text = (p.innerText || "").trim();
-        
         const count = p.querySelectorAll(highlightSelector).length;
+        
         if (count === 0) continue; 
-
         if (count > bestCount) {
             bestEl = p;
             bestCount = count;

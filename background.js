@@ -51,7 +51,7 @@ Rules:
 - Stay neutral, factual, concise.
 - ALWAYS return 6 bullet_points, 1–2 sentences each.
 - indicators must match exact article text and include a brief reason.
-- source_analysis should describe typical editorial leaning of the outlet, not the intent of individual journalists.
+- source_analysis should describe typical editorial leaning of the outlet, not the intent of individual journalists or the article.
 - If you are unsure, use leaning="Unknown" with confidence="Low".
 - Output valid JSON only, no code fences.
 
@@ -118,14 +118,8 @@ ${articleText}
         parsed = JSON.parse(content);
     } catch (err) {}
 
-    if (!Array.isArray(parsed.bullet_points)) {
-        parsed.bullet_points = [];
-    }
-
-    if (!Array.isArray(parsed.indicators)) {
-        parsed.indicators = [];
-    }
-
+    if (!Array.isArray(parsed.bullet_points)) { parsed.bullet_points = []; }
+    if (!Array.isArray(parsed.indicators)) { parsed.indicators = []; }
     if (!parsed.source_analysis || typeof parsed.source_analysis !== "object") {
         parsed.source_analysis = { leaning: "Unknown", confidence: "Low", credibility: "Unknown" };
     }
@@ -190,7 +184,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
             let llmResult = {
                 bullet_points: [],
-                // bias_excerpt_html: "",
                 indicators: []
             }
             
