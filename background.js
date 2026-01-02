@@ -1,5 +1,7 @@
 // background.js
 
+const PANEL_PATH = "sidepanel/sidepanel.html";
+
 // ========== HELPERS ==========
 function getApiSettings(cb) {
     chrome.storage.local.get(["openai_api_key", "openai_model"], data => {
@@ -19,6 +21,18 @@ function openOptionsPage() {
 
 function sendToPanel(msg) {
     chrome.runtime.sendMessage(msg);
+}
+
+async function enablePanelForTab(tabId) {
+    try {
+        await chrome.sidePanel.setOptions({
+            tabId,
+            path: PANEL_PATH,
+            enabled: true
+        });
+    } catch (e) {
+        console.warn('setOptions failed', e);
+    }
 }
 
 // ========== LLM CALL ==========
@@ -261,4 +275,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.create({ url: "https://www.google.com/" });
         return;
     }
+});
+
+chrome.runtime.onInstalled.addListener(async () => {
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+        if (t.id) enablePanelForTab(t.id);
+    }
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+    enablePanelForTab(tabId);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info.status !== "complete") return;
+    if (!tab?.url) return;
+    enablePanelForTab(tabId);
+});
+
+chrome.sidePanel.onOpened.addListener((info) => {
+    console.log("Opened!");
+    console.log(info);
+    console.log(info.tabId);
 });
