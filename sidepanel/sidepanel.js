@@ -415,8 +415,11 @@ closeBtn?.addEventListener("click", () => {
 })
 
 // ========== MESSAGE HANDLER ==========
-chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "SUBTEXT_DETECTED_ARTICLE") {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    console.log(sender);
+    console.log(msg);
+    
+    if (msg.type === "SUBTEXT_DETECTED_ARTICLE_INFO") {
         renderDetectedArticle(msg.payload || {});
     }
 
@@ -442,3 +445,5 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 chrome.runtime.sendMessage({ type: "SUBTEXT_CHECK_API_KEY" });
+chrome.runtime.sendMessage({ type: "SUBTEXT_PANEL_READY" });
+

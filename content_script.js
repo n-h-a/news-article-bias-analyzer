@@ -30,17 +30,6 @@ function extractArticle() {
     return { title, url, source, text, excerpt };
 }
 
-// As soon as we load, tell the extension that this tab has an article.
-const initialArticle = extractArticle();
-chrome.runtime.sendMessage({
-    type: "SUBTEXT_DETECTED_ARTICLE",
-    payload: {
-        title: initialArticle.title,
-        source: initialArticle.source,
-        url: initialArticle.url
-    }
-});
-
 // ========== STYLES ==========
 function injectBiasStylesOnce() {
     if (document.getElementById("bias-styles")) return;
@@ -288,6 +277,24 @@ function getBestHighlightedExcerpt() {
 
 // ========== MESSAGE HANDLER ==========
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === "SUBTEXT_PING") {
+        sendResponse({ ok: true });
+        return true;
+    }
+    
+    if (msg.type === "SUBTEXT_GET_ARTICLE_INFO") {
+        const art = extractArticle();
+        chrome.runtime.sendMessage({
+            type: "SUBTEXT_DETECTED_ARTICLE_INFO",
+            payload: {
+                title: art.title,
+                source: art.source,
+                url: art.url
+            }
+        });
+        return true;
+    }
+    
     if (msg.type === "SUBTEXT_GET_ARTICLE") {
         const art = extractArticle();
         sendResponse(art);

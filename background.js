@@ -2,6 +2,8 @@
 
 const PANEL_PATH = "sidepanel/sidepanel.html";
 
+const analysisRequested = new Set();
+
 // ========== HELPERS ==========
 function getApiSettings(cb) {
     chrome.storage.local.get(["openai_api_key", "openai_model"], data => {
@@ -33,6 +35,59 @@ async function enablePanelForTab(tabId) {
     } catch (e) {
         console.warn('setOptions failed', e);
     }
+}
+
+function sendMessageToTab(tabId, msg) {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, msg, (resp) => {
+            if (chrome.runtime.lastError) {
+                resolve({ ok: false, error: chrome.runtime.lastError.message });
+            } else {
+                resolve({ ok: true, resp });
+            }
+        });
+    });
+}
+
+async function ensureContentScript(tabId) {
+    const ping = await sendMessageToTab(tabId, { type: "SUBTEXT_PING" });
+    if (ping.ok) return true;
+
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ["vendor/Readability.js", "content_script.js"]
+        });
+
+        const ping2 = await sendMessageToTab(tabId, { type: "SUBTEXT_PING" });
+        return ping2.ok;
+    } catch (e) {
+        console.warn("Failed to inject content script", e);
+        return false;
+    }
+}
+
+async function requestArticlePreview(tabId) {
+    const ok = await ensureContentScript(tabId);
+    if (!ok) return;
+
+    const articleInfo = await sendMessageToTab(tabId, { type: "SUBTEXT_GET_ARTICLE_INFO" });
+}
+
+function invalidUrl(url) {
+  if (!url || typeof url !== "string") return true;
+
+  const blockedPrefixes = [
+    "chrome://",
+    "chrome-extension://",
+    "edge://",
+    "about:",
+    "devtools://",
+    "view-source:",
+    "moz-extension://"
+  ];
+
+  return blockedPrefixes.some(prefix => url.startsWith(prefix));
 }
 
 // ========== LLM CALL ==========
@@ -143,7 +198,7 @@ ${articleText}
 
 // ========== MESSAGE HUB ==========
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {   
-    // 1. Panel asks if API key exists.
+    // 0. Panel asks if API key exists.
     if (msg.type === "SUBTEXT_CHECK_API_KEY") {
         getApiSettings(hasKey => {
             sendToPanel({
@@ -154,7 +209,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
     }
 
-    // 2. Panel clicked "Analyze".
+    // 1. If panel is ready, then request article preview.
+    if (msg.type === "SUBTEXT_PANEL_READY") {
+        chrome.tabs.query({ active: true, currentWindow: true}, async (tabs) => {
+            const tabId = tabs?.[0]?.id;
+            if (tabId) await requestArticlePreview(tabId);
+        });
+        return;
+    }
+
+    // 2. If panel clicked "Analyze", then request article.
     if (msg.type === "SUBTEXT_START_ANALYSIS") {
         getApiSettings((hasKey, apiKey, model) => {
             if (!hasKey) {
@@ -277,25 +341,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
+
+// ========== EVENT LISTENERS ==========
 chrome.runtime.onInstalled.addListener(async () => {
     const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-        if (t.id) enablePanelForTab(t.id);
+    for (const tab of tabs) {
+        if (!tab.id || invalidUrl(tab.url)) continue;
+        await ensureContentScript(tab.id);
     }
 });
 
-chrome.tabs.onActivated.addListener(({ tabId }) => {
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+    const tab = await chrome.tabs.get(tabId);
+    if (invalidUrl(tab.url)) return;
+    
     enablePanelForTab(tabId);
+    await requestArticlePreview(tabId);
 });
 
-chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     if (info.status !== "complete") return;
     if (!tab?.url) return;
-    enablePanelForTab(tabId);
-});
+    if (invalidUrl(tab.url)) return;
 
-chrome.sidePanel.onOpened.addListener((info) => {
-    console.log("Opened!");
-    console.log(info);
-    console.log(info.tabId);
+    enablePanelForTab(tabId);
+    await requestArticlePreview(tabId);
 });

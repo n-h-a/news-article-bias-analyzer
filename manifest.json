@@ -10,13 +10,14 @@
         "storage",
         "favicon"
     ],
+    "host_permissions": ["<all_urls>"],
     "background": {
         "service_worker": "background.js"
     },
     "content_scripts": [
         {
             "matches": ["<all_urls>"],
-            "js": ["content_script.js", "vendor/Readability.js"],
+            "js": ["vendor/Readability.js", "content_script.js"],
             "run_at": "document_idle"
         }
     ],
