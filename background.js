@@ -197,7 +197,15 @@ ${articleText}
 }
 
 // ========== MESSAGE HUB ==========
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {   
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => { 
+    // Logger
+    if (msg.type === "LOG") {
+        const timestamp = new Date().toLocaleTimeString();
+        const source = sender.tab ? `Tab: ${sender.tab.id}` : `Extension`;
+
+        console.log(`[${timestamp}] [${msg.level.toUpperCase()}] [${source}]`, msg.msg, msg.data);
+    }
+
     // 0. Panel asks if API key exists.
     if (msg.type === "SUBTEXT_CHECK_API_KEY") {
         getApiSettings(hasKey => {
