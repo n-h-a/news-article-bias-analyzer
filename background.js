@@ -4,6 +4,15 @@ const PANEL_PATH = "sidepanel/sidepanel.html";
 
 const analysisRequested = new Set();
 
+function logBackground(level, msg, data = {}) {
+    const timestamp = new Date().toLocaleTimeString();
+    const method = level === "error" ? "error" : "log";
+    console[method](`[${timestamp}] [${level.toUpperCase()}] [Background] ${msg}`, data);
+}
+
+const logInfo = (msg, data = {}) => logBackground("info", msg, data);
+const logError = (msg, data = {}) => logBackground("error", msg, data);
+
 // ========== HELPERS ==========
 function getApiSettings(cb) {
     chrome.storage.local.get(["openai_api_key", "openai_model"], data => {
@@ -14,14 +23,16 @@ function getApiSettings(cb) {
 }
 
 function openOptionsPage() {
+    logInfo("Opening options page");
     if (chrome.runtime.openOptionsPage) {
         chrome.runtime.openOptionsPage();
     } else {
-        chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html")})
+        chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html")});
     }
 }
 
 function sendToPanel(msg) {
+    logInfo("Sending message to side panel", { type: msg?.type || "unknown" });
     chrome.runtime.sendMessage(msg);
 }
 
@@ -32,8 +43,9 @@ async function enablePanelForTab(tabId) {
             path: PANEL_PATH,
             enabled: true
         });
+        logInfo("Enabled side panel for tab", { tabId });
     } catch (e) {
-        console.warn('setOptions failed', e);
+        logError("Failed to enable side panel", { tabId, error: String(e) });
     }
 }
 
@@ -51,27 +63,38 @@ function sendMessageToTab(tabId, msg) {
 
 async function ensureContentScript(tabId) {
     const ping = await sendMessageToTab(tabId, { type: "SUBTEXT_PING" });
-    if (ping.ok) return true;
+    if (ping.ok) {
+        logInfo("Content script already available", { tabId });
+        return true;
+    }
 
     try {
+        logInfo("Injecting content script", { tabId });
         await chrome.scripting.executeScript({
             target: { tabId },
             files: ["vendor/Readability.js", "content_script.js"]
         });
 
         const ping2 = await sendMessageToTab(tabId, { type: "SUBTEXT_PING" });
+        if (!ping2.ok) {
+            logError("Content script injection verification failed", { tabId, error: ping2.error || "Unknown error" });
+        }
         return ping2.ok;
     } catch (e) {
-        console.warn("Failed to inject content script", e);
+        logError("Failed to inject content script", { tabId, error: String(e) });
         return false;
     }
 }
 
 async function requestArticlePreview(tabId) {
     const ok = await ensureContentScript(tabId);
-    if (!ok) return;
+    if (!ok) {
+        logError("Unable to request article preview", { tabId });
+        return;
+    }
 
-    const articleInfo = await sendMessageToTab(tabId, { type: "SUBTEXT_GET_ARTICLE_INFO" });
+    await sendMessageToTab(tabId, { type: "SUBTEXT_GET_ARTICLE_INFO" });
+    logInfo("Requested article preview", { tabId });
 }
 
 function invalidUrl(url) {
@@ -197,17 +220,20 @@ ${articleText}
 }
 
 // ========== MESSAGE HUB ==========
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => { 
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Logger
     if (msg.type === "LOG") {
         const timestamp = new Date().toLocaleTimeString();
-        const source = sender.tab ? `Tab: ${sender.tab.id}` : `Extension`;
+        const source = sender.tab ? `Tab: ${sender.tab.id}` : "Extension";
+        const method = msg.level === "error" ? "error" : "log";
 
-        console.log(`[${timestamp}] [${msg.level.toUpperCase()}] [${source}]`, msg.msg, msg.data);
+        console[method](`[${timestamp}] [${msg.level.toUpperCase()}] [${source}]`, msg.msg, msg.data);
+        return;
     }
 
     // 0. Panel asks if API key exists.
     if (msg.type === "SUBTEXT_CHECK_API_KEY") {
+        logInfo("Received API key status check request");
         getApiSettings(hasKey => {
             sendToPanel({
                 type: "SUBTEXT_HAS_API_KEY",
@@ -219,7 +245,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // 1. If panel is ready, then request article preview.
     if (msg.type === "SUBTEXT_PANEL_READY") {
-        chrome.tabs.query({ active: true, currentWindow: true}, async (tabs) => {
+        logInfo("Side panel reported ready");
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
             const tabId = tabs?.[0]?.id;
             if (tabId) await requestArticlePreview(tabId);
         });
@@ -228,8 +255,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // 2. If panel clicked "Analyze", then request article.
     if (msg.type === "SUBTEXT_START_ANALYSIS") {
+        logInfo("Analysis requested from side panel");
         getApiSettings((hasKey, apiKey, model) => {
             if (!hasKey) {
+                logInfo("Analysis blocked because API key is missing");
                 sendToPanel({
                     type: "SUBTEXT_HAS_API_KEY",
                     payload: { hasKey: false }
@@ -241,7 +270,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             // Ask current tab for article content.
             chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
                 const tab = tabs[0];
-                if (!tab) return;
+                if (!tab) {
+                    logError("No active tab found for analysis request");
+                    return;
+                }
+                logInfo("Requesting article content from active tab", { tabId: tab.id, model });
                 chrome.tabs.sendMessage(tab.id, {
                     type: "SUBTEXT_GET_ARTICLE"
                 });
@@ -254,6 +287,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "SUBTEXT_ARTICLE_DATA") {
         getApiSettings(async (hasKey, apiKey, model) => {
             if (!hasKey) {
+                logInfo("Article data received but API key is missing");
                 sendToPanel({
                     type: "SUBTEXT_HAS_API_KEY",
                     payload: { hasKey: false }
@@ -268,13 +302,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const articleSource = art.source || "";
             const articleText = art.text || "";
 
+            logInfo("Article data received for analysis", {
+                title: articleTitle,
+                source: articleSource || "Unknown",
+                textLength: articleText.length,
+                model
+            });
+
             let llmResult = {
                 bullet_points: [],
                 indicators: []
-            }
+            };
             
             // 3a. Call bias model with extracted article.
             try {
+                logInfo("Calling bias model", { model, articleTitle });
                 llmResult = await callBiasModel({
                     apiKey,
                     model,
@@ -283,8 +325,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     articleSource,
                     articleText,
                 });
+                logInfo("Bias model returned result", {
+                    bulletCount: Array.isArray(llmResult.bullet_points) ? llmResult.bullet_points.length : 0,
+                    indicatorCount: Array.isArray(llmResult.indicators) ? llmResult.indicators.length : 0
+                });
             } catch (err) {
-                console.warn("LLM call failed:", err);
+                logError("LLM call failed", { error: String(err) });
             }
 
             // 3b. Tell the side panel to render.
@@ -317,7 +363,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }));
 
             if (tabId) {
-                // Apply highlights by DOM-walk.
+                logInfo("Sending highlights to source tab", { tabId, annotationCount: annotations.length });
                 chrome.tabs.sendMessage(tabId, {
                     type: "APPLY_HIGHLIGHTS",
                     annotations
@@ -326,8 +372,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 // Fallback to active tab.
                 chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
                     const tab = tabs[0];
-                    if (!tab) return;
-                    
+                    if (!tab) {
+                        logError("No tab available for highlight application");
+                        return;
+                    }
+
+                    logInfo("Sending highlights to active tab fallback", { tabId: tab.id, annotationCount: annotations.length });
                     chrome.tabs.sendMessage(tab.id, {
                         type: "APPLY_HIGHLIGHTS",
                         annotations
@@ -339,11 +389,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === "SUBTEXT_OPEN_SETTINGS") {
+        logInfo("Open settings request received");
         openOptionsPage();
         return;
     }
 
     if (msg.type === "SUBTEXT_OPEN_CONTEXT") {
+        logInfo("Open context request received");
         chrome.tabs.create({ url: "https://www.google.com/" });
         return;
     }
@@ -352,6 +404,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ========== EVENT LISTENERS ==========
 chrome.runtime.onInstalled.addListener(async () => {
+    logInfo("Extension installed; checking open tabs for content script injection");
     const tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
         if (!tab.id || invalidUrl(tab.url)) continue;
@@ -362,7 +415,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     const tab = await chrome.tabs.get(tabId);
     if (invalidUrl(tab.url)) return;
-    
+
+    logInfo("Active tab changed", { tabId, url: tab.url });
     enablePanelForTab(tabId);
     await requestArticlePreview(tabId);
 });
@@ -372,6 +426,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     if (!tab?.url) return;
     if (invalidUrl(tab.url)) return;
 
+    logInfo("Tab finished loading", { tabId, url: tab.url });
     enablePanelForTab(tabId);
     await requestArticlePreview(tabId);
 });

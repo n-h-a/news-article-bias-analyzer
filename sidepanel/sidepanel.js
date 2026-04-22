@@ -1,5 +1,8 @@
 // sidepanel.js
 
+import Logger from '../logger.js';
+
+
 // ========== PAGE ELEMENTS ==========
 const pageStart = document.getElementById("start-page");
 const pageResults = document.getElementById("results-page");
@@ -56,11 +59,13 @@ const closeBtn = document.getElementById("btn-close-panel-header");
 function showStartPage() {
     if (pageStart) pageStart.classList.add("page--active");
     if (pageResults) pageResults.classList.remove("page--active");
+    Logger.info("Showing start page");
 }
 
 function showResultsPage() {
     if (pageResults) pageResults.classList.add("page--active");
     if (pageStart) pageStart.classList.remove("page--active");
+    Logger.info("Showing results page");
 }
 
 // ========== LOADING TIMELINE (4 steps, min 1s each) ==========
@@ -93,6 +98,8 @@ function setLoadingVisible() {
     if (biasIndicatorsContent) biasIndicatorsContent.classList.add("hidden");
     if (sourceLoading) sourceLoading.classList.remove("hidden");
     if (sourceContent) sourceContent.classList.add("hidden");
+
+    Logger.info('Show loading page and elements');
 }
 
 function setResultsVisible() {
@@ -108,6 +115,8 @@ function setResultsVisible() {
     if (sourceLoading) sourceLoading.classList.add("hidden");
 
     if (analyzeBtn) analyzeBtn.disabled = false;
+    Logger.info('Show results page and elements');
+
 }
 
 function applyResultToUI(res) {
@@ -125,6 +134,7 @@ function applyResultToUI(res) {
     renderSourceAnalysis(res.sourceInfo);
 
     setResultsVisible();
+    Logger.info('Applied results to UI');
 }
 
 function setSummaryProgress(pct, label) {
@@ -157,6 +167,8 @@ async function runMinimumLoadingTimeline(runId) {
         const step = LOADING_STEPS[i];
         const fromPct = lastPct;
         const toPct = step.pct;
+
+        Logger.info("Loading step updated", { label: step.label, pct: step.pct, runId });
 
         const start = performance.now();
         const duration = 500;
@@ -211,6 +223,11 @@ function renderDetectedArticle(data = {}) {
         linkEl.textContent = url;
         linkEl.href = url;
     }
+
+    Logger.info("Detected article info updated", {
+        hasTitle: Boolean(title),
+        source: source || "Unknown"
+    });
 }
 
 function renderAnalysisCard(data = {}) {
@@ -362,6 +379,7 @@ function faviconURL(u) {
 
 // ========== BUTTON EVENTS ==========
 analyzeBtn?.addEventListener("click", async () => {
+    Logger.info("Analyze button clicked");
     analyzeBtn.disabled = true;
     setLoadingVisible();
 
@@ -379,6 +397,7 @@ analyzeBtn?.addEventListener("click", async () => {
 });
 
 openSettingsBtn?.addEventListener("click", () => {
+    Logger.info("Opening settings from warning card");
     chrome.runtime.sendMessage({ type: "SUBTEXT_OPEN_SETTINGS" });
 });
 
@@ -392,38 +411,41 @@ copyBtn?.addEventListener("click", async () => {
 
     try {
         await navigator.clipboard.writeText(text);
+        Logger.info("Summary copied to clipboard", { itemCount: items.length });
         copyBtn.textContent = "Copied!";
         setTimeout(() => {
         copyBtn.innerHTML =
             '<span class="actions-section-secondary-icon" aria-hidden="true">📋</span><span>Copy Summary</span>';
         }, 1200);
     } catch (err) {
-        console.warn("Clipboard failed", err);
+        Logger.error("Failed to copy summary", { error: String(err) });
     }
 });
 
 seeContextBtn?.addEventListener("click", () => {
+    Logger.info("Opening more context view");
     chrome.runtime.sendMessage({ type: "SUBTEXT_OPEN_CONTEXT" });
 });
 
 settingsBtn?.addEventListener("click", () => {
+    Logger.info("Opening settings from actions");
     chrome.runtime.sendMessage({ type: "SUBTEXT_OPEN_SETTINGS" });
 });
 
 closeBtn?.addEventListener("click", () => {
+    Logger.info("Close panel requested");
     chrome.runtime.sendMessage({ type: "SUBTEXT_CLOSE_PANEL" });
-})
+});
 
 // ========== MESSAGE HANDLER ==========
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    console.log(sender);
-    console.log(msg);
-    
     if (msg.type === "SUBTEXT_DETECTED_ARTICLE_INFO") {
+        Logger.info("Received detected article info");
         renderDetectedArticle(msg.payload || {});
     }
 
     if (msg.type === "SUBTEXT_HAS_API_KEY") {
+        Logger.info("Received API key status", { hasKey: Boolean(msg.payload?.hasKey) });
         if (apiWarningCard) {
             apiWarningCard.style.display = msg.payload?.hasKey ? "none" : "block";
         }
@@ -435,15 +457,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         pendingResult = res;
         analysisDone = true;
 
+        Logger.info("Analysis result received", {
+            bulletCount: Array.isArray(res.bulletPoints) ? res.bulletPoints.length : 0,
+            indicatorCount: Array.isArray(res.indicators) ? res.indicators.length : 0
+        });
+
         maybeFinalizeRun(currentRunId);
     }
 
     if (msg.type === "SUBTEXT_EXCERPT_UPDATE" && msg.payload?.excerptHtml) {
         const p = msg.payload || {};
+        Logger.info("Excerpt highlight update received", {
+            highlightCount: p.highlightCount || 0
+        });
         renderBiasExcerpt(p.excerpt || "", p.excerptHtml || "");
     }
 });
 
+Logger.info("Side panel initialized");
 chrome.runtime.sendMessage({ type: "SUBTEXT_CHECK_API_KEY" });
 chrome.runtime.sendMessage({ type: "SUBTEXT_PANEL_READY" });
 

@@ -1,5 +1,25 @@
 // content_script.js
 
+function logContent(level, msg, data = {}) {
+    try {
+        chrome.runtime.sendMessage({
+            type: "LOG",
+            level,
+            msg,
+            data: {
+                page: location.hostname,
+                ...data
+            }
+        });
+    } catch (error) {
+        const method = level === "error" ? "error" : "log";
+        console[method](`[${level.toUpperCase()}] ${msg}`, data, error);
+    }
+}
+
+const logInfo = (msg, data = {}) => logContent("info", msg, data);
+const logError = (msg, data = {}) => logContent("error", msg, data);
+
 // ========== ARTICLE EXTRACTION ==========
 function extractArticle() {
     const url = location.href;
@@ -25,7 +45,9 @@ function extractArticle() {
                 ? clipToSentence(article.excerpt) 
                 : clipToSentence(text.slice(0, 600));
         }
-    } catch (e) {}
+    } catch (e) {
+        logError("Readability parsing failed", { error: String(e) });
+    }
 
     return { title, url, source, text, excerpt };
 }
@@ -161,7 +183,10 @@ function highlightBias(annotations) {
         }))
         .filter(x => x.phrase.length > 0);
 
-    if (!items.length) return;
+    if (!items.length) {
+        logInfo("No annotations available for highlighting");
+        return;
+    }
 
     // Sort by longer phrases first to ensure regex tests them.
     items.sort((a, b) => b.phrase.length - a.phrase.length);
@@ -188,6 +213,8 @@ function highlightBias(annotations) {
         toProcess.push(walker.currentNode);
     }
 
+    let matchCount = 0;
+
     // Process each text node.
     for (const textNode of toProcess) {
         const text = textNode.nodeValue;
@@ -206,6 +233,7 @@ function highlightBias(annotations) {
             const match = m[0];
             const start = m.index;
             const end = start + match.length;
+            matchCount++;
 
             // Add plain text before the match.
             if (start > lastIdx) {
@@ -232,15 +260,26 @@ function highlightBias(annotations) {
 
         textNode.parentNode.replaceChild(frag, textNode);
     }
+
+    logInfo("Bias highlights applied", {
+        annotationCount: items.length,
+        matchCount
+    });
 }
 
 function clearBiasHighlights() {
-    document.querySelectorAll("span.bias-tag").forEach(span => {
+    const existingHighlights = document.querySelectorAll("span.bias-tag");
+
+    existingHighlights.forEach(span => {
         const parent = span.parentNode;
         if (!parent) return;
         parent.replaceChild(document.createTextNode(span.textContent), span);
         parent.normalize();
-    })
+    });
+
+    if (existingHighlights.length) {
+        logInfo("Cleared existing highlights", { count: existingHighlights.length });
+    }
 }
 
 // ========== RETRIEVE EXCERPT ==========
@@ -284,6 +323,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     if (msg.type === "SUBTEXT_GET_ARTICLE_INFO") {
         const art = extractArticle();
+        logInfo("Sending article preview info", {
+            hasTitle: Boolean(art.title),
+            source: art.source || "Unknown"
+        });
         chrome.runtime.sendMessage({
             type: "SUBTEXT_DETECTED_ARTICLE_INFO",
             payload: {
@@ -297,6 +340,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     if (msg.type === "SUBTEXT_GET_ARTICLE") {
         const art = extractArticle();
+        logInfo("Sending article data for analysis", {
+            title: art.title || "Untitled article",
+            source: art.source || "Unknown",
+            textLength: (art.text || "").length
+        });
         sendResponse(art);
         chrome.runtime.sendMessage({
             type: "SUBTEXT_ARTICLE_DATA",
@@ -306,11 +354,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === "APPLY_HIGHLIGHTS" && Array.isArray(msg.annotations)) {
+        logInfo("Received highlight request", { annotationCount: msg.annotations.length });
         clearBiasHighlights();
         highlightBias(msg.annotations);
 
         const best = getBestHighlightedExcerpt();
         if (best.excerptHtml) {
+            logInfo("Sending highlighted excerpt update", { highlightCount: best.highlightCount });
             chrome.runtime.sendMessage({
                 type: "SUBTEXT_EXCERPT_UPDATE",
                 payload: {
@@ -326,6 +376,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === "CLEAR_HIGHLIGHTS") {
+        logInfo("Received clear highlights request");
         clearBiasHighlights();
         sendResponse({ ok: true });
         return true;
