@@ -15,6 +15,21 @@ function logBackground(level, msg, data = {}) {
 const logInfo = (msg, data = {}) => logBackground("info", msg, data);
 const logError = (msg, data = {}) => logBackground("error", msg, data);
 
+async function configureActionToOpenSidePanel() {
+    if (!chrome.sidePanel?.setPanelBehavior) {
+        return;
+    }
+
+    try {
+        await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+        logInfo("Configured action click to open side panel");
+    } catch (error) {
+        logError("Failed to configure action click side panel behavior", {
+            error: String(error)
+        });
+    }
+}
+
 
 // ========== SETTINGS ==========
 function getApiSettings(cb) {
@@ -743,6 +758,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ========== EVENT LISTENERS ==========
 chrome.runtime.onInstalled.addListener(async () => {
+    await configureActionToOpenSidePanel();
     logInfo("Extension installed; checking open tabs for content script injection");
     const tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
@@ -750,6 +766,12 @@ chrome.runtime.onInstalled.addListener(async () => {
         await ensureContentScript(tab.id);
     }
 });
+
+chrome.runtime.onStartup?.addListener(async () => {
+    await configureActionToOpenSidePanel();
+});
+
+configureActionToOpenSidePanel();
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     const tab = await chrome.tabs.get(tabId);
