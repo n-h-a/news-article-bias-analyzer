@@ -20,6 +20,44 @@ function logContent(level, msg, data = {}) {
 const logInfo = (msg, data = {}) => logContent("info", msg, data);
 const logError = (msg, data = {}) => logContent("error", msg, data);
 
+function normalizeTextForHeuristics(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function getWordCount(value) {
+    const normalized = normalizeTextForHeuristics(value);
+    return normalized ? normalized.split(/\s+/).length : 0;
+}
+
+function detectArticleLikePage({ readabilityArticle, fallbackText }) {
+    const readabilityText = normalizeTextForHeuristics(readabilityArticle?.textContent || "");
+    const fallbackBodyText = normalizeTextForHeuristics(fallbackText || "");
+    const readabilityWordCount = getWordCount(readabilityText);
+    const fallbackWordCount = getWordCount(fallbackBodyText);
+
+    const hasArticleElement = Boolean(document.querySelector("article"));
+    const hasArticleMetadata = Boolean(
+        document.querySelector("meta[property='og:type'][content='article']") ||
+        document.querySelector("meta[property='article:published_time']") ||
+        document.querySelector("meta[name='author']") ||
+        document.querySelector("script[type='application/ld+json']")
+    );
+
+    const hasStrongReadabilityMatch = Boolean(
+        readabilityArticle && readabilityText.length >= 900 && readabilityWordCount >= 140
+    );
+
+    const hasSemanticArticleMatch = Boolean(
+        hasArticleElement && fallbackWordCount >= 180
+    );
+
+    const hasMetadataArticleMatch = Boolean(
+        hasArticleMetadata && fallbackWordCount >= 180
+    );
+
+    return hasStrongReadabilityMatch || hasSemanticArticleMatch || hasMetadataArticleMatch;
+}
+
 // ========== ARTICLE EXTRACTION ==========
 function extractArticle() {
     const url = location.href;
@@ -31,11 +69,13 @@ function extractArticle() {
     let source = location.hostname.replace(/^www\./, "");
     let text = document.body ? document.body.innerText : "";
     let excerpt = clipToSentence(text.slice(0, 420));
+    let readabilityArticle = null;
 
     try {
         const documentClone = document.cloneNode(true);
         const reader = new Readability(documentClone);
         const article = reader.parse();
+        readabilityArticle = article;
 
         if (article) {
             title = article.title || title;
@@ -49,7 +89,12 @@ function extractArticle() {
         logError("Readability parsing failed", { error: String(e) });
     }
 
-    return { title, url, source, text, excerpt };
+    const isArticle = detectArticleLikePage({
+        readabilityArticle,
+        fallbackText: text
+    });
+
+    return { title, url, source, text, excerpt, isArticle };
 }
 
 // ========== STYLES ==========
@@ -368,7 +413,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             title: art.title,
             source: art.source,
             url: art.url,
-            excerpt: art.excerpt
+            excerpt: art.excerpt,
+            isArticle: art.isArticle
         });
         return true;
     }

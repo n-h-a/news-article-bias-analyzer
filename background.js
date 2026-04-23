@@ -340,6 +340,16 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     }
 
     const article = previewResult.resp;
+    if (!article.isArticle) {
+        sendPageStateToPanel({
+            tabId,
+            article,
+            mode: "start",
+            statusMessage: "Subtext works best on standalone article pages. Open an article to analyze it."
+        });
+        return;
+    }
+
     const cachedResult = await getCachedAnalysis(article.url, article);
 
     if (cachedResult) {
@@ -639,6 +649,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 const articleSource = art.source || "";
                 const articleText = art.text || "";
                 const trimmedArticleText = trimArticleTextForModel(articleText);
+
+                if (!art.isArticle) {
+                    sendAnalysisError("not-an-article", "Subtext could not find a standalone article on this page.");
+                    return;
+                }
 
                 logInfo("Article data received for analysis", {
                     title: articleTitle,

@@ -8,6 +8,9 @@ const pageStart = document.getElementById("start-page");
 const pageResults = document.getElementById("results-page");
 
 // -- Page 1 : Start Page --
+const detectedTopTitleEl = document.getElementById("detected-top-title");
+const detectedTopTextEl = document.getElementById("detected-top-text");
+const detectedCardLabelEl = document.getElementById("detected-article-card-label");
 const apiWarningCard = document.getElementById("api-warning-card");
 const openSettingsBtn = document.getElementById("btn-api-warning-card-open-settings");
 const detectedTitleEl = document.getElementById("detected-article-card-title");
@@ -169,6 +172,28 @@ function clearRenderedResults() {
     });
 }
 
+function renderDetectedPageState(data = {}) {
+    const isArticle = Boolean(data.isArticle);
+
+    if (detectedTopTitleEl) {
+        detectedTopTitleEl.textContent = isArticle ? "Article Detected" : "No Article Detected";
+    }
+
+    if (detectedTopTextEl) {
+        detectedTopTextEl.textContent = isArticle
+            ? "Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary."
+            : "This page does not look like a standalone article yet. Open an article page to analyze it with Subtext.";
+    }
+
+    if (detectedCardLabelEl) {
+        detectedCardLabelEl.textContent = isArticle ? "DETECTED ARTICLE" : "PAGE PREVIEW";
+    }
+
+    if (analyzeBtn) {
+        analyzeBtn.disabled = !isArticle;
+    }
+}
+
 function setCurrentContext(tabId, url) {
     currentContext = {
         tabId: tabId ?? null,
@@ -187,6 +212,7 @@ function applyPageState(payload = {}) {
 
     cancelPendingAnalysisRun();
     setCurrentContext(tabId, articleUrl);
+    renderDetectedPageState(article);
     renderDetectedArticle(article);
 
     if (payload.mode === "results" && payload.result) {
@@ -289,12 +315,16 @@ function maybeFinalizeRun(runId) {
 
 // ========== RENDER HELPERS ==========
 function renderDetectedArticle(data = {}) {
-    const { title, source, url } = data;
+    const { title, source, url, isArticle } = data;
 
-    if (detectedTitleEl) detectedTitleEl.textContent = title || "Retrieving title...";
-    if (detectedSourceEl) detectedSourceEl.textContent = source || "Retrieving source...";
+    const defaultTitle = isArticle ? "Retrieving title..." : "No standalone article found";
+    const defaultSource = isArticle ? "Retrieving source..." : "Open an article page to continue";
+    const defaultUrl = isArticle ? "Retrieving link..." : (url || "Current page");
+
+    if (detectedTitleEl) detectedTitleEl.textContent = title || defaultTitle;
+    if (detectedSourceEl) detectedSourceEl.textContent = source || defaultSource;
     if (detectedUrlEl) {
-        detectedUrlEl.textContent = url || "Retrieving link...";
+        detectedUrlEl.textContent = defaultUrl;
         detectedUrlEl.href = url || "#";
     }
 
