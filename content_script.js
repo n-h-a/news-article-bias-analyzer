@@ -43,19 +43,55 @@ function detectArticleLikePage({ readabilityArticle, fallbackText }) {
         document.querySelector("script[type='application/ld+json']")
     );
 
-    const hasStrongReadabilityMatch = Boolean(
-        readabilityArticle && readabilityText.length >= 900 && readabilityWordCount >= 140
-    );
+    const hasStrongReadabilityMatch = Boolean(readabilityArticle && readabilityText.length >= 900 && readabilityWordCount >= 140);
+    const hasMediumReadabilityMatch = Boolean(readabilityArticle && readabilityText.length >= 500 && readabilityWordCount >= 90);
+    const hasSemanticArticleMatch = Boolean(hasArticleElement && fallbackWordCount >= 180);
+    const hasMetadataArticleMatch = Boolean(hasArticleMetadata && fallbackWordCount >= 180);
+    const hasEnoughBodyText = fallbackWordCount >= 250;
 
-    const hasSemanticArticleMatch = Boolean(
-        hasArticleElement && fallbackWordCount >= 180
-    );
+    let score = 0;
+    const reasons = [];
 
-    const hasMetadataArticleMatch = Boolean(
-        hasArticleMetadata && fallbackWordCount >= 180
-    );
+    if (hasStrongReadabilityMatch) {
+        score += 4;
+        reasons.push("Readability found a strong article body");
+    } else if (hasMediumReadabilityMatch) {
+        score += 2;
+        reasons.push("Readability found a plausible article body");
+    }
 
-    return hasStrongReadabilityMatch || hasSemanticArticleMatch || hasMetadataArticleMatch;
+    if (hasSemanticArticleMatch) {
+        score += 2;
+        reasons.push("Page uses article-like structure");
+    }
+
+    if (hasMetadataArticleMatch) {
+        score += 2;
+        reasons.push("Page includes article-style metadata");
+    }
+
+    if (hasEnoughBodyText) {
+        score += 1;
+        reasons.push("Page has enough body text to analyze");
+    }
+
+    let detectionConfidence = "low";
+    let detectionReason = "This page does not look enough like a standalone article yet.";
+
+    if (score >= 4) {
+        detectionConfidence = "high";
+        detectionReason = reasons[0] || "This page strongly looks like a standalone article.";
+    } else if (score >= 2) {
+        detectionConfidence = "medium";
+        detectionReason = reasons[0] || "This page may be an article, but the signal is weaker.";
+    }
+
+    return {
+        isArticle: detectionConfidence !== "low",
+        detectionConfidence,
+        detectionReason,
+        detectionScore: score
+    };
 }
 
 // ========== ARTICLE EXTRACTION ==========
@@ -89,12 +125,22 @@ function extractArticle() {
         logError("Readability parsing failed", { error: String(e) });
     }
 
-    const isArticle = detectArticleLikePage({
+    const detection = detectArticleLikePage({
         readabilityArticle,
         fallbackText: text
     });
 
-    return { title, url, source, text, excerpt, isArticle };
+    return {
+        title,
+        url,
+        source,
+        text,
+        excerpt,
+        isArticle: detection.isArticle,
+        detectionConfidence: detection.detectionConfidence,
+        detectionReason: detection.detectionReason,
+        detectionScore: detection.detectionScore
+    };
 }
 
 // ========== STYLES ==========
@@ -414,7 +460,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             source: art.source,
             url: art.url,
             excerpt: art.excerpt,
-            isArticle: art.isArticle
+            isArticle: art.isArticle,
+            detectionConfidence: art.detectionConfidence,
+            detectionReason: art.detectionReason,
+            detectionScore: art.detectionScore
         });
         return true;
     }

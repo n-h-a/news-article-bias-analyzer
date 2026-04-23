@@ -345,7 +345,7 @@ async function syncPanelStateForTab(tabId, tabUrl) {
             tabId,
             article,
             mode: "start",
-            statusMessage: "Subtext works best on standalone article pages. Open an article to analyze it."
+            statusMessage: article.detectionReason || "Subtext works best on standalone article pages. Open an article to analyze it."
         });
         return;
     }
@@ -375,7 +375,9 @@ async function syncPanelStateForTab(tabId, tabUrl) {
         article,
         mode: cachedResult ? "results" : "start",
         result: cachedResult,
-        statusMessage: ""
+        statusMessage: article.detectionConfidence === "medium"
+            ? (article.detectionReason || "This page may be an article, but detection confidence is lower than usual.")
+            : ""
     });
 }
 
@@ -651,7 +653,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 const trimmedArticleText = trimArticleTextForModel(articleText);
 
                 if (!art.isArticle) {
-                    sendAnalysisError("not-an-article", "Subtext could not find a standalone article on this page.");
+                    sendAnalysisError("not-an-article", art.detectionReason || "Subtext could not find a standalone article on this page.");
                     return;
                 }
 

@@ -173,20 +173,28 @@ function clearRenderedResults() {
 }
 
 function renderDetectedPageState(data = {}) {
-    const isArticle = Boolean(data.isArticle);
+    const detectionConfidence = data.detectionConfidence || (data.isArticle ? "high" : "low");
+    const isArticle = detectionConfidence !== "low";
+    const isUncertainArticle = detectionConfidence === "medium";
 
     if (detectedTopTitleEl) {
-        detectedTopTitleEl.textContent = isArticle ? "Article Detected" : "No Article Detected";
+        detectedTopTitleEl.textContent = isArticle
+            ? (isUncertainArticle ? "Possible Article Detected" : "Article Detected")
+            : "No Article Detected";
     }
 
     if (detectedTopTextEl) {
         detectedTopTextEl.textContent = isArticle
-            ? "Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary."
+            ? (isUncertainArticle
+                ? "This page might be a standalone article. You can analyze it, but the detection signal is weaker than usual."
+                : "Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary.")
             : "This page does not look like a standalone article yet. Open an article page to analyze it with Subtext.";
     }
 
     if (detectedCardLabelEl) {
-        detectedCardLabelEl.textContent = isArticle ? "DETECTED ARTICLE" : "PAGE PREVIEW";
+        detectedCardLabelEl.textContent = isArticle
+            ? (isUncertainArticle ? "POSSIBLE ARTICLE" : "DETECTED ARTICLE")
+            : "PAGE PREVIEW";
     }
 
     if (analyzeBtn) {
@@ -221,7 +229,6 @@ function applyPageState(payload = {}) {
     }
 
     clearRenderedResults();
-    if (analyzeBtn) analyzeBtn.disabled = false;
     showStartPage();
     setStartPageStatus(payload.statusMessage || "");
 }
@@ -315,7 +322,9 @@ function maybeFinalizeRun(runId) {
 
 // ========== RENDER HELPERS ==========
 function renderDetectedArticle(data = {}) {
-    const { title, source, url, isArticle } = data;
+    const { title, source, url } = data;
+    const detectionConfidence = data.detectionConfidence || (data.isArticle ? "high" : "low");
+    const isArticle = detectionConfidence !== "low";
 
     const defaultTitle = isArticle ? "Retrieving title..." : "No standalone article found";
     const defaultSource = isArticle ? "Retrieving source..." : "Open an article page to continue";
