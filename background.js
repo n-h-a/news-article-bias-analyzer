@@ -94,21 +94,6 @@ function buildArticlePreviewFingerprint(article = {}) {
     return `preview:v1:${(hash >>> 0).toString(16)}`;
 }
 
-function buildArticleContentFingerprint(article = {}) {
-    const signatureSource = [
-        buildArticlePreviewFingerprint(article),
-        normalizeCacheText(article.text || "")
-    ].join("||");
-
-    let hash = 2166136261;
-    for (let i = 0; i < signatureSource.length; i++) {
-        hash ^= signatureSource.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-
-    return `content:v1:${(hash >>> 0).toString(16)}`;
-}
-
 function isExpiredCacheEntry(entry) {
     if (!entry?.cachedAt) return true;
     return Date.now() - entry.cachedAt > ANALYSIS_CACHE_TTL_MS;
@@ -202,13 +187,11 @@ async function setCachedAnalysis(url, result, article = null) {
     if (!cacheKey) return;
 
     const articlePreviewFingerprint = buildArticlePreviewFingerprint(article || result || { url });
-    const articleContentFingerprint = buildArticleContentFingerprint(article || result || { url });
 
     await chrome.storage.session.set({
         [cacheKey]: {
             ...result,
             articlePreviewFingerprint,
-            articleContentFingerprint,
             normalizedUrl: normalizeUrl(url),
             cachedAt: Date.now(),
             lastAccessedAt: Date.now()

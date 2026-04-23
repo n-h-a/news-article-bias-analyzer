@@ -1,6 +1,6 @@
 import Logger from '../logger.js';
 
-async function validateApiKey(apiKey) {
+async function validateApiConfiguration(apiKey, model) {
     const response = await fetch('https://api.openai.com/v1/models', {
         method: 'GET',
         headers: {
@@ -8,16 +8,27 @@ async function validateApiKey(apiKey) {
         }
     });
 
-    if (response.ok) {
-        return { ok: true, message: 'API key validated and saved.' };
-    }
-
     let detail = '';
+    let data = null;
     try {
-        const data = await response.json();
+        data = await response.json();
         detail = data?.error?.message || '';
     } catch {
         detail = '';
+    }
+
+    if (response.ok) {
+        const availableModels = Array.isArray(data?.data) ? data.data : [];
+        const hasModelAccess = availableModels.some(item => item?.id === model);
+
+        if (!hasModelAccess) {
+            return {
+                ok: false,
+                message: `The API key is valid, but the model "${model}" is not available to this account.`
+            };
+        }
+
+        return { ok: true, message: 'API key and model validated successfully.' };
     }
 
     if (response.status === 401) {
@@ -49,14 +60,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            if (apiKey) {
-                statusEl.textContent = 'Validating API key...';
-                const validation = await validateApiKey(apiKey);
-                if (!validation.ok) {
-                    statusEl.textContent = validation.message;
-                    Logger.error('API key validation failed', { message: validation.message });
-                    return;
-                }
+            statusEl.textContent = 'Validating API key and model...';
+            const validation = await validateApiConfiguration(effectiveApiKey, model);
+            if (!validation.ok) {
+                statusEl.textContent = validation.message;
+                Logger.info('API configuration validation failed', {
+                    message: validation.message,
+                    model,
+                    usedStoredKey: !apiKey
+                });
+                return;
             }
 
             await chrome.storage.local.set({
@@ -65,8 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
 
             statusEl.textContent = apiKey
-                ? 'Saved. API key validated successfully.'
-                : 'Saved. Existing API key kept and model updated.';
+                ? 'Saved. API key and model validated successfully.'
+                : 'Saved. Existing API key kept and model validated successfully.';
             Logger.info('Options saved', { model, hasNewApiKey: Boolean(apiKey) });
         } catch (e) {
             statusEl.textContent = 'Failed to save settings';

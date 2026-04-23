@@ -90,7 +90,6 @@ function detectArticleLikePage({ readabilityArticle, fallbackText }) {
         isArticle: detectionConfidence !== "low",
         detectionConfidence,
         detectionReason,
-        detectionScore: score
     };
 }
 
@@ -138,8 +137,7 @@ function extractArticle() {
         excerpt,
         isArticle: detection.isArticle,
         detectionConfidence: detection.detectionConfidence,
-        detectionReason: detection.detectionReason,
-        detectionScore: detection.detectionScore
+        detectionReason: detection.detectionReason
     };
 }
 
@@ -462,8 +460,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             excerpt: art.excerpt,
             isArticle: art.isArticle,
             detectionConfidence: art.detectionConfidence,
-            detectionReason: art.detectionReason,
-            detectionScore: art.detectionScore
+            detectionReason: art.detectionReason
         });
         return true;
     }
