@@ -8,6 +8,7 @@ const pageStart = document.getElementById("start-page");
 const pageResults = document.getElementById("results-page");
 
 // -- Page 1 : Start Page --
+const detectedTopIconEl = document.getElementById("detected-top-icon");
 const detectedTopTitleEl = document.getElementById("detected-top-title");
 const detectedTopTextEl = document.getElementById("detected-top-text");
 const detectedCardLabelEl = document.getElementById("detected-article-card-label");
@@ -17,6 +18,8 @@ const detectedTitleEl = document.getElementById("detected-article-card-title");
 const detectedSourceEl = document.getElementById("detected-article-card-source");
 const detectedUrlEl = document.getElementById("detected-article-card-url");
 const analyzeBtn = document.getElementById("btn-start-analyze");
+const startPageStatusCardEl = document.getElementById("start-page-status-card");
+const startPageStatusAccentEl = document.getElementById("start-page-status-accent");
 const startPageStatusEl = document.getElementById("start-page-status");
 
 // -- Loading --
@@ -73,17 +76,32 @@ function showResultsPage() {
     Logger.info("Showing results page");
 }
 
-function setStartPageStatus(message = "") {
-    if (!startPageStatusEl) return;
+function setStartPageStatus(message = "", tone = "info") {
+    if (!startPageStatusEl || !startPageStatusCardEl) return;
 
     if (!message) {
         startPageStatusEl.textContent = "";
-        startPageStatusEl.classList.add("hidden");
+        startPageStatusCardEl.classList.add("hidden");
+        startPageStatusCardEl.classList.remove(
+            "start-page-status-card--info",
+            "start-page-status-card--warning",
+            "start-page-status-card--error"
+        );
         return;
     }
 
     startPageStatusEl.textContent = message;
-    startPageStatusEl.classList.remove("hidden");
+    startPageStatusCardEl.classList.remove("hidden");
+    startPageStatusCardEl.classList.remove(
+        "start-page-status-card--info",
+        "start-page-status-card--warning",
+        "start-page-status-card--error"
+    );
+    startPageStatusCardEl.classList.add(`start-page-status-card--${tone}`);
+
+    if (startPageStatusAccentEl) {
+        startPageStatusAccentEl.textContent = tone === "error" ? "!" : tone === "warning" ? "?" : "i";
+    }
 }
 
 function setApiWarningVisible(hasKey) {
@@ -95,7 +113,7 @@ function recoverFromAnalysisError(message) {
     cancelPendingAnalysisRun();
     showStartPage();
     if (analyzeBtn) analyzeBtn.disabled = false;
-    setStartPageStatus(message || "Subtext could not analyze this page. Try again.");
+    setStartPageStatus(message || "Subtext could not analyze this page. Try again.", "error");
     Logger.error("Recovered panel from analysis error", { message: message || "Unknown error" });
 }
 
@@ -182,6 +200,19 @@ function renderDetectedPageState(data = {}) {
     const isArticle = detectionConfidence !== "low";
     const isUncertainArticle = detectionConfidence === "medium";
 
+    if (detectedTopIconEl) {
+        detectedTopIconEl.classList.remove(
+            "detected-top-icon--article",
+            "detected-top-icon--possible",
+            "detected-top-icon--empty"
+        );
+        detectedTopIconEl.classList.add(
+            isArticle
+                ? (isUncertainArticle ? "detected-top-icon--possible" : "detected-top-icon--article")
+                : "detected-top-icon--empty"
+        );
+    }
+
     if (detectedTopTitleEl) {
         detectedTopTitleEl.textContent = isArticle
             ? (isUncertainArticle ? "Possible Article Detected" : "Article Detected")
@@ -204,6 +235,7 @@ function renderDetectedPageState(data = {}) {
 
     if (analyzeBtn) {
         analyzeBtn.disabled = !isArticle;
+        analyzeBtn.textContent = "Analyze Article";
     }
 }
 
@@ -235,7 +267,9 @@ function applyPageState(payload = {}) {
 
     clearRenderedResults();
     showStartPage();
-    setStartPageStatus(payload.statusMessage || "");
+    const detectionConfidence = article.detectionConfidence || (article.isArticle ? "high" : "low");
+    const statusTone = detectionConfidence === "medium" ? "warning" : "info";
+    setStartPageStatus(payload.statusMessage || "", statusTone);
 }
 
 function applyResultToUI(res) {

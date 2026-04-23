@@ -23,11 +23,20 @@
         <main id="start-page" class="page page--active">
             <!-- detected top -->
             <div class="detected-top">
-                <div class="detected-top-play-circle">▶</div>
+                <div id="detected-top-icon" class="detected-top-icon detected-top-icon--article" aria-hidden="true">
+                    <span class="detected-top-icon-page"></span>
+                    <span class="detected-top-icon-line detected-top-icon-line--one"></span>
+                    <span class="detected-top-icon-line detected-top-icon-line--two"></span>
+                </div>
                 <h1 id="detected-top-title" class="detected-top-title">Article Detected</h1>
                 <p id="detected-top-text" class="detected-top-text">
                 Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary.
                 </p>
+            </div>
+
+            <div id="start-page-status-card" class="start-page-status-card hidden" aria-live="polite">
+                <span id="start-page-status-accent" class="start-page-status-accent" aria-hidden="true"></span>
+                <p id="start-page-status" class="start-page-status"></p>
             </div>
 
             <!-- api warning card -->
@@ -61,7 +70,6 @@
                 <button id="btn-start-analyze" class="actions-section-primary btn-start-analyze">
                     Analyze Article
                 </button>
-                <p id="start-page-status" class="start-page-status hidden" aria-live="polite"></p>
             </div>
         </main>
 
