@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modelEl = document.getElementById('model');
     const statusEl = document.getElementById('status');
 
-    // If 'save' button is clicked, save API key and model to storage.
     document.getElementById('save').addEventListener('click', async () => {
         try {
             const apiKey = apiKeyEl.value.trim();
@@ -25,7 +24,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // If 'forget' button is clicked, remove API key from storage.
     document.getElementById('forget').addEventListener('click', async () => {
         try {
             await chrome.storage.local.remove(['openai_api_key']);
@@ -37,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Load previously saved model from storage and prefill input box when Options page opens.
     try {
         const { openai_model } = await chrome.storage.local.get(['openai_model']);
         if (openai_model) {

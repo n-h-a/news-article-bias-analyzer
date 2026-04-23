@@ -1,8 +1,8 @@
 // background.js
 
 const PANEL_PATH = "sidepanel/sidepanel.html";
-
-const analysisRequested = new Set();
+const ANALYSIS_CACHE_PREFIX = "analysis:";
+const MAX_ARTICLE_CHARS = 18000;
 
 function logBackground(level, msg, data = {}) {
     const timestamp = new Date().toLocaleTimeString();
@@ -13,7 +13,8 @@ function logBackground(level, msg, data = {}) {
 const logInfo = (msg, data = {}) => logBackground("info", msg, data);
 const logError = (msg, data = {}) => logBackground("error", msg, data);
 
-// ========== HELPERS ==========
+
+// ========== SETTINGS ==========
 function getApiSettings(cb) {
     chrome.storage.local.get(["openai_api_key", "openai_model"], data => {
         const key = (data.openai_api_key || "").trim();
@@ -36,6 +37,202 @@ function sendToPanel(msg) {
     chrome.runtime.sendMessage(msg);
 }
 
+function sendAnalysisError(reason, message) {
+    sendToPanel({
+        type: "SUBTEXT_ANALYSIS_ERROR",
+        payload: { reason, message }
+    });
+}
+
+function normalizeUrl(url) {
+    if (!url || typeof url !== "string") return "";
+
+    try {
+        const parsed = new URL(url);
+        parsed.hash = "";
+        return parsed.toString();
+    } catch {
+        return url;
+    }
+}
+
+function getAnalysisCacheKey(url) {
+    const normalizedUrl = normalizeUrl(url);
+    return normalizedUrl ? `${ANALYSIS_CACHE_PREFIX}${normalizedUrl}` : "";
+}
+
+async function getCachedAnalysis(url) {
+    const cacheKey = getAnalysisCacheKey(url);
+    if (!cacheKey) return null;
+
+    const cached = await chrome.storage.session.get(cacheKey);
+    return cached[cacheKey] || null;
+}
+
+async function setCachedAnalysis(url, result) {
+    const cacheKey = getAnalysisCacheKey(url);
+    if (!cacheKey) return;
+
+    await chrome.storage.session.set({
+        [cacheKey]: {
+            ...result,
+            normalizedUrl: normalizeUrl(url),
+            cachedAt: Date.now()
+        }
+    });
+}
+
+async function getActiveTab() {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs?.[0] || null;
+}
+
+function buildResultPayload({ art, llmResult, excerpt, excerptHtml }) {
+    const sourceAnalysis = llmResult.source_analysis || {};
+
+    return {
+        title: art.title || "Untitled article",
+        url: art.url || "",
+        source: art.source || "",
+        excerpt: excerpt ?? art.excerpt ?? "",
+        excerptHtml: excerptHtml || "",
+        bulletPoints: llmResult.bullet_points || [],
+        indicators: llmResult.indicators || [],
+        sourceInfo: {
+            name: art.source || "Unknown source",
+            bias: sourceAnalysis.leaning || "Unknown",
+            credibility: sourceAnalysis.credibility || "Unknown",
+            confidence: sourceAnalysis.confidence || "Low",
+            provider: "Subtext (LLM)"
+        }
+    };
+}
+
+function trimArticleTextForModel(articleText, maxChars = MAX_ARTICLE_CHARS) {
+    const normalized = (articleText || "").replace(/\s+/g, " ").trim();
+    if (!normalized || normalized.length <= maxChars) {
+        return normalized;
+    }
+
+    const clipped = normalized.slice(0, maxChars);
+    const sentenceBoundary = Math.max(
+        clipped.lastIndexOf(". "),
+        clipped.lastIndexOf("! "),
+        clipped.lastIndexOf("? ")
+    );
+
+    if (sentenceBoundary > Math.floor(maxChars * 0.6)) {
+        return clipped.slice(0, sentenceBoundary + 1).trim();
+    }
+
+    return `${clipped.trim()}...`;
+}
+
+function buildContextPageUrl(article = {}) {
+    const pageUrl = chrome.runtime.getURL("context/context.html");
+    const url = new URL(pageUrl);
+
+    if (article.title) url.searchParams.set("title", article.title);
+    if (article.url) url.searchParams.set("url", article.url);
+    if (article.source) url.searchParams.set("source", article.source);
+
+    return url.toString();
+}
+
+function sendPageStateToPanel({ tabId, article, mode, result, statusMessage }) {
+    sendToPanel({
+        type: "SUBTEXT_PAGE_STATE",
+        payload: {
+            tabId,
+            article: article || null,
+            mode,
+            result: result || null,
+            statusMessage: statusMessage || ""
+        }
+    });
+}
+
+function buildHighlightAnnotations(indicators = []) {
+    return indicators.map(ind => ({
+        phrase: ind.phrase,
+        category: ind.bias,
+        reason: ind.reason || "Possible bias"
+    }));
+}
+
+async function syncPanelStateForTab(tabId, tabUrl) {
+    if (!tabId) return;
+
+    if (invalidUrl(tabUrl)) {
+        sendPageStateToPanel({
+            tabId,
+            article: {
+                title: "Unsupported page",
+                source: "",
+                url: tabUrl || ""
+            },
+            mode: "start",
+            statusMessage: "Subtext only works on normal web pages."
+        });
+        return;
+    }
+
+    const ok = await ensureContentScript(tabId);
+    if (!ok) {
+        sendPageStateToPanel({
+            tabId,
+            article: null,
+            mode: "start",
+            statusMessage: "Subtext could not access this page. Reload it and try again."
+        });
+        return;
+    }
+
+    const previewResult = await sendMessageToTab(tabId, { type: "SUBTEXT_GET_ARTICLE_INFO" });
+    if (!previewResult.ok || !previewResult.resp) {
+        logError("Failed to retrieve article preview", {
+            tabId,
+            error: previewResult.error || "Unknown error"
+        });
+        sendPageStateToPanel({
+            tabId,
+            article: null,
+            mode: "start",
+            statusMessage: "Subtext could not read this page. Reload it and try again."
+        });
+        return;
+    }
+
+    const article = previewResult.resp;
+    const cachedResult = await getCachedAnalysis(article.url);
+
+    if (cachedResult) {
+        const highlightRestore = await sendMessageToTab(tabId, {
+            type: "APPLY_HIGHLIGHTS",
+            annotations: buildHighlightAnnotations(cachedResult.indicators || [])
+        });
+
+        if (highlightRestore.ok && highlightRestore.resp?.excerptHtml) {
+            cachedResult.excerpt = highlightRestore.resp.excerpt || cachedResult.excerpt || "";
+            cachedResult.excerptHtml = highlightRestore.resp.excerptHtml || cachedResult.excerptHtml || "";
+            await setCachedAnalysis(article.url, cachedResult);
+        } else if (!highlightRestore.ok) {
+            logError("Failed to restore cached highlights", {
+                tabId,
+                error: highlightRestore.error || "Unknown error"
+            });
+        }
+    }
+
+    sendPageStateToPanel({
+        tabId,
+        article,
+        mode: cachedResult ? "results" : "start",
+        result: cachedResult,
+        statusMessage: ""
+    });
+}
+
 async function enablePanelForTab(tabId) {
     try {
         await chrome.sidePanel.setOptions({
@@ -46,6 +243,20 @@ async function enablePanelForTab(tabId) {
         logInfo("Enabled side panel for tab", { tabId });
     } catch (e) {
         logError("Failed to enable side panel", { tabId, error: String(e) });
+    }
+}
+
+async function closePanelForTab(tabId) {
+    try {
+        if (chrome.sidePanel?.close) {
+            await chrome.sidePanel.close({ tabId });
+        } else {
+            await chrome.sidePanel.setOptions({ tabId, enabled: false });
+        }
+
+        logInfo("Closed side panel for tab", { tabId });
+    } catch (e) {
+        logError("Failed to close side panel", { tabId, error: String(e) });
     }
 }
 
@@ -86,17 +297,6 @@ async function ensureContentScript(tabId) {
     }
 }
 
-async function requestArticlePreview(tabId) {
-    const ok = await ensureContentScript(tabId);
-    if (!ok) {
-        logError("Unable to request article preview", { tabId });
-        return;
-    }
-
-    await sendMessageToTab(tabId, { type: "SUBTEXT_GET_ARTICLE_INFO" });
-    logInfo("Requested article preview", { tabId });
-}
-
 function invalidUrl(url) {
   if (!url || typeof url !== "string") return true;
 
@@ -135,7 +335,7 @@ You are a media analysis assistant. Read the article and return JSON in this exa
   "source_analysis": {
     "leaning": "Left|Center-left|Center|Center-right|Right|Mixed|Unknown",
     "confidence": "High|Medium|Low",
-    "credibility": "High|Medium|Low|Unknown",
+        "credibility": "High|Medium|Low|Unknown"
   }
 }
 
@@ -156,12 +356,14 @@ Examples:
 - Loaded: "heroic stand" — praises one side or actor emotionally.
     `.trim();
 
+    const trimmedArticleText = trimArticleTextForModel(articleText);
+
     const user = `
 Title: ${articleTitle || "Unknown"}
 URL: ${articleUrl || "Unknown"}
 Source: ${articleSource || "Unknown"}
 Article:
-${articleText}
+${trimmedArticleText}
     `.trim();
 
     const body = {
@@ -196,19 +398,16 @@ ${articleText}
     }
 
     // Default Structure
-    let parsed = {
-        bullet_points: [],
-        indicators: [],
-        source_analysis: {
-            leaning: "Unknown",
-            confidence: "Low",
-            credibility: "Unknown"
-        }
-    };
-
+    let parsed;
     try {
         parsed = JSON.parse(content);
-    } catch (err) {}
+    } catch (err) {
+        logError("Failed to parse model response as JSON", {
+            error: String(err),
+            contentPreview: content.slice(0, 500)
+        });
+        throw new Error("Model returned invalid JSON");
+    }
 
     if (!Array.isArray(parsed.bullet_points)) { parsed.bullet_points = []; }
     if (!Array.isArray(parsed.indicators)) { parsed.indicators = []; }
@@ -247,8 +446,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "SUBTEXT_PANEL_READY") {
         logInfo("Side panel reported ready");
         chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-            const tabId = tabs?.[0]?.id;
-            if (tabId) await requestArticlePreview(tabId);
+            const tab = tabs?.[0];
+            if (tab?.id) await syncPanelStateForTab(tab.id, tab.url);
         });
         return;
     }
@@ -263,129 +462,127 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     type: "SUBTEXT_HAS_API_KEY",
                     payload: { hasKey: false }
                 });
+                sendAnalysisError("missing-api-key", "Add your OpenAI API key in Settings to analyze this article.");
                 openOptionsPage();
                 return;
             }
 
             // Ask current tab for article content.
-            chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+            chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
                 const tab = tabs[0];
                 if (!tab) {
                     logError("No active tab found for analysis request");
+                    sendAnalysisError("no-active-tab", "Open an article tab and try again.");
                     return;
                 }
+
+                const ok = await ensureContentScript(tab.id);
+                if (!ok) {
+                    logError("Analysis blocked because content script is unavailable", { tabId: tab.id });
+                    sendAnalysisError("content-script-unavailable", "Subtext could not access this page. Reload it and try again.");
+                    return;
+                }
+
                 logInfo("Requesting article content from active tab", { tabId: tab.id, model });
-                chrome.tabs.sendMessage(tab.id, {
+                const result = await sendMessageToTab(tab.id, {
                     type: "SUBTEXT_GET_ARTICLE"
                 });
-            });
-        });
-        return;
-    }
-    
-    // 3. Content script sent back article.
-    if (msg.type === "SUBTEXT_ARTICLE_DATA") {
-        getApiSettings(async (hasKey, apiKey, model) => {
-            if (!hasKey) {
-                logInfo("Article data received but API key is missing");
-                sendToPanel({
-                    type: "SUBTEXT_HAS_API_KEY",
-                    payload: { hasKey: false }
-                });
-                openOptionsPage();
-                return;
-            }
 
-            const art = msg.payload || {};
-            const articleTitle = art.title || "Untitled article";
-            const articleUrl = art.url || "";
-            const articleSource = art.source || "";
-            const articleText = art.text || "";
-
-            logInfo("Article data received for analysis", {
-                title: articleTitle,
-                source: articleSource || "Unknown",
-                textLength: articleText.length,
-                model
-            });
-
-            let llmResult = {
-                bullet_points: [],
-                indicators: []
-            };
-            
-            // 3a. Call bias model with extracted article.
-            try {
-                logInfo("Calling bias model", { model, articleTitle });
-                llmResult = await callBiasModel({
-                    apiKey,
-                    model,
-                    articleTitle,
-                    articleUrl,
-                    articleSource,
-                    articleText,
-                });
-                logInfo("Bias model returned result", {
-                    bulletCount: Array.isArray(llmResult.bullet_points) ? llmResult.bullet_points.length : 0,
-                    indicatorCount: Array.isArray(llmResult.indicators) ? llmResult.indicators.length : 0
-                });
-            } catch (err) {
-                logError("LLM call failed", { error: String(err) });
-            }
-
-            // 3b. Tell the side panel to render.
-            const sourceAnalysis = llmResult.source_analysis || {};
-            sendToPanel({
-                type: "SUBTEXT_RESULT",
-                payload: {
-                    title: articleTitle,
-                    url: articleUrl,
-                    source: articleSource,
-                    excerpt: art.excerpt || "",
-                    bulletPoints: llmResult.bullet_points || [],
-                    indicators: llmResult.indicators || [],
-                    sourceInfo: {
-                        name: art.source || "Unknown source",
-                        bias: sourceAnalysis.leaning || "Unknown",
-                        credibility: sourceAnalysis.credibility || "Unknown",
-                        confidence: sourceAnalysis.confidence || "Low",
-                        provider: "Subtext (LLM)"
-                    }
+                if (!result.ok) {
+                    logError("Failed to request article content from tab", {
+                        tabId: tab.id,
+                        error: result.error || "Unknown error"
+                    });
+                    sendAnalysisError("article-request-failed", "Subtext could not read this article. Reload the page and try again.");
+                    return;
                 }
-            });
+                
+                const art = result.resp || {};
+                const articleTitle = art.title || "Untitled article";
+                const articleUrl = art.url || tab.url || "";
+                const articleSource = art.source || "";
+                const articleText = art.text || "";
+                const trimmedArticleText = trimArticleTextForModel(articleText);
 
-            // 3c. Tell the tab to highlight.
-            const tabId = sender?.tab?.id;
-            const annotations = (llmResult.indicators || []).map(ind => ({
-                phrase: ind.phrase,
-                category: ind.bias,
-                reason: ind.reason || "Possible bias"
-            }));
+                logInfo("Article data received for analysis", {
+                    title: articleTitle,
+                    source: articleSource || "Unknown",
+                    textLength: articleText.length,
+                    trimmedTextLength: trimmedArticleText.length,
+                    model,
+                    tabId: tab.id
+                });
 
-            if (tabId) {
-                logInfo("Sending highlights to source tab", { tabId, annotationCount: annotations.length });
-                chrome.tabs.sendMessage(tabId, {
+                let llmResult;
+
+                try {
+                    logInfo("Calling bias model", { model, articleTitle });
+                    llmResult = await callBiasModel({
+                        apiKey,
+                        model,
+                        articleTitle,
+                        articleUrl,
+                        articleSource,
+                        articleText: trimmedArticleText,
+                    });
+                    logInfo("Bias model returned result", {
+                        bulletCount: Array.isArray(llmResult.bullet_points) ? llmResult.bullet_points.length : 0,
+                        indicatorCount: Array.isArray(llmResult.indicators) ? llmResult.indicators.length : 0,
+                        tabId: tab.id
+                    });
+                } catch (err) {
+                    logError("LLM call failed", { error: String(err) });
+                    sendAnalysisError("analysis-failed", "Subtext could not complete the analysis. Try again in a moment.");
+                    return;
+                }
+
+                const annotations = buildHighlightAnnotations(llmResult.indicators || []);
+
+                let excerpt = art.excerpt || "";
+                let excerptHtml = "";
+
+                const highlightResult = await sendMessageToTab(tab.id, {
                     type: "APPLY_HIGHLIGHTS",
                     annotations
                 });
-            } else {
-                // Fallback to active tab.
-                chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-                    const tab = tabs[0];
-                    if (!tab) {
-                        logError("No tab available for highlight application");
-                        return;
-                    }
 
-                    logInfo("Sending highlights to active tab fallback", { tabId: tab.id, annotationCount: annotations.length });
-                    chrome.tabs.sendMessage(tab.id, {
-                        type: "APPLY_HIGHLIGHTS",
-                        annotations
+                if (highlightResult.ok && highlightResult.resp) {
+                    excerpt = highlightResult.resp.excerpt || excerpt;
+                    excerptHtml = highlightResult.resp.excerptHtml || "";
+                } else if (!highlightResult.ok) {
+                    logError("Failed to apply highlights", {
+                        tabId: tab.id,
+                        error: highlightResult.error || "Unknown error"
                     });
+                }
+
+                const payload = buildResultPayload({
+                    art,
+                    llmResult,
+                    excerpt,
+                    excerptHtml
                 });
-            }
+
+                await setCachedAnalysis(articleUrl, payload);
+
+                const activeTab = await getActiveTab();
+                if (!activeTab?.id) return;
+
+                const activeUrl = normalizeUrl(activeTab.url || "");
+                const resultUrl = normalizeUrl(articleUrl);
+
+                if (activeTab.id === tab.id && activeUrl === resultUrl) {
+                    sendToPanel({
+                        type: "SUBTEXT_RESULT",
+                        payload: {
+                            tabId: tab.id,
+                            result: payload
+                        }
+                    });
+                }
+            });
         });
-        return true;
+        return;
     }
 
     if (msg.type === "SUBTEXT_OPEN_SETTINGS") {
@@ -396,7 +593,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg.type === "SUBTEXT_OPEN_CONTEXT") {
         logInfo("Open context request received");
-        chrome.tabs.create({ url: "https://www.google.com/" });
+        chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
+            const tab = tabs?.[0];
+            const articleUrl = tab?.url || "";
+            const article = articleUrl && !invalidUrl(articleUrl)
+                ? (await getCachedAnalysis(articleUrl)) || { url: articleUrl }
+                : {};
+
+            chrome.tabs.create({ url: buildContextPageUrl(article) });
+        });
+        return;
+    }
+
+    if (msg.type === "SUBTEXT_CLOSE_PANEL") {
+        chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
+            const tabId = tabs?.[0]?.id;
+            if (!tabId) {
+                logError("No active tab found for close panel request");
+                return;
+            }
+
+            await closePanelForTab(tabId);
+        });
         return;
     }
 });
@@ -414,19 +632,28 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     const tab = await chrome.tabs.get(tabId);
-    if (invalidUrl(tab.url)) return;
+    logInfo("Active tab changed", { tabId, url: tab?.url || "" });
 
-    logInfo("Active tab changed", { tabId, url: tab.url });
+    if (!tab?.url || invalidUrl(tab.url)) {
+        await syncPanelStateForTab(tabId, tab?.url || "");
+        return;
+    }
+
     enablePanelForTab(tabId);
-    await requestArticlePreview(tabId);
+    await syncPanelStateForTab(tabId, tab.url);
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     if (info.status !== "complete") return;
-    if (!tab?.url) return;
-    if (invalidUrl(tab.url)) return;
+    if (!tab?.active) return;
 
-    logInfo("Tab finished loading", { tabId, url: tab.url });
+    logInfo("Tab finished loading", { tabId, url: tab?.url || "" });
+
+    if (!tab?.url || invalidUrl(tab.url)) {
+        await syncPanelStateForTab(tabId, tab?.url || "");
+        return;
+    }
+
     enablePanelForTab(tabId);
-    await requestArticlePreview(tabId);
+    await syncPanelStateForTab(tabId, tab.url);
 });

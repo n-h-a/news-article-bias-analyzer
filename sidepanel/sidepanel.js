@@ -14,6 +14,7 @@ const detectedTitleEl = document.getElementById("detected-article-card-title");
 const detectedSourceEl = document.getElementById("detected-article-card-source");
 const detectedUrlEl = document.getElementById("detected-article-card-url");
 const analyzeBtn = document.getElementById("btn-start-analyze");
+const startPageStatusEl = document.getElementById("start-page-status");
 
 // -- Loading --
 const summaryLoading = document.getElementById("summary-section-loading");
@@ -68,9 +69,34 @@ function showResultsPage() {
     Logger.info("Showing results page");
 }
 
+function setStartPageStatus(message = "") {
+    if (!startPageStatusEl) return;
+
+    if (!message) {
+        startPageStatusEl.textContent = "";
+        startPageStatusEl.classList.add("hidden");
+        return;
+    }
+
+    startPageStatusEl.textContent = message;
+    startPageStatusEl.classList.remove("hidden");
+}
+
+function recoverFromAnalysisError(message) {
+    cancelPendingAnalysisRun();
+    showStartPage();
+    if (analyzeBtn) analyzeBtn.disabled = false;
+    setStartPageStatus(message || "Subtext could not analyze this page. Try again.");
+    Logger.error("Recovered panel from analysis error", { message: message || "Unknown error" });
+}
+
+let currentContext = {
+    tabId: null,
+    url: ""
+};
+
 // ========== LOADING TIMELINE (4 steps, min 1s each) ==========
 let currentRunId = 0;
-let minUiPromise = null;
 let minUiDone = false;
 let analysisDone = false;
 let pendingResult = null;
@@ -82,8 +108,17 @@ const LOADING_STEPS = [
     { label: "Complete", pct: 100 }
 ];
 
+function cancelPendingAnalysisRun() {
+        // Bump the run id so any in-flight loading animation exits without finalizing stale results.
+    currentRunId++;
+    minUiDone = false;
+    analysisDone = false;
+    pendingResult = null;
+}
+
 function setLoadingVisible() {
     setSummaryProgress(0, "");
+    setStartPageStatus("");
     
     showResultsPage();
     renderSummary([]);
@@ -119,17 +154,63 @@ function setResultsVisible() {
 
 }
 
+function clearRenderedResults() {
+    renderDetectedArticle({});
+    renderAnalysisCard({});
+    renderSummary([]);
+    renderBiasExcerpt("");
+    renderBiasIndicators([]);
+    renderSourceAnalysis({
+        name: "",
+        bias: "Unknown",
+        credibility: "",
+        confidence: "",
+        provider: ""
+    });
+}
+
+function setCurrentContext(tabId, url) {
+    currentContext = {
+        tabId: tabId ?? null,
+        url: url || ""
+    };
+}
+
+function matchesCurrentContext(tabId, url) {
+    return currentContext.tabId === (tabId ?? null) && currentContext.url === (url || "");
+}
+
+function applyPageState(payload = {}) {
+    const article = payload.article || {};
+    const tabId = payload.tabId ?? null;
+    const articleUrl = article.url || "";
+
+    cancelPendingAnalysisRun();
+    setCurrentContext(tabId, articleUrl);
+    renderDetectedArticle(article);
+
+    if (payload.mode === "results" && payload.result) {
+        applyResultToUI(payload.result);
+        return;
+    }
+
+    clearRenderedResults();
+    if (analyzeBtn) analyzeBtn.disabled = false;
+    showStartPage();
+    setStartPageStatus(payload.statusMessage || "");
+}
+
 function applyResultToUI(res) {
-    if (titleEl && res.title) titleEl.textContent = res.title;
-    if (sourceEl && res.source) sourceEl.textContent = res.source;
-    if (linkEl && res.url) {
-        linkEl.textContent = res.url;
-        linkEl.href = res.url;
+    if (titleEl) titleEl.textContent = res.title || "Untitled article";
+    if (sourceEl) sourceEl.textContent = res.source || "Unknown source";
+    if (linkEl) {
+        linkEl.textContent = res.url || "No article link available";
+        linkEl.href = res.url || "#";
     }
 
     renderAnalysisCard({ title: res.title, source: res.source, url: res.url });
     renderSummary(res.bulletPoints);
-    renderBiasExcerpt(res.excerpt, "");
+    renderBiasExcerpt(res.excerpt, res.excerptHtml || "");
     renderBiasIndicators(res.indicators);
     renderSourceAnalysis(res.sourceInfo);
 
@@ -210,18 +291,18 @@ function maybeFinalizeRun(runId) {
 function renderDetectedArticle(data = {}) {
     const { title, source, url } = data;
 
-    if (detectedTitleEl && title) detectedTitleEl.textContent = title;
-    if (detectedSourceEl && source) detectedSourceEl.textContent = source;
-    if (detectedUrlEl && url) {
-        detectedUrlEl.textContent = url;
-        detectedUrlEl.href = url;
+    if (detectedTitleEl) detectedTitleEl.textContent = title || "Retrieving title...";
+    if (detectedSourceEl) detectedSourceEl.textContent = source || "Retrieving source...";
+    if (detectedUrlEl) {
+        detectedUrlEl.textContent = url || "Retrieving link...";
+        detectedUrlEl.href = url || "#";
     }
 
-    if (titleEl && title) titleEl.textContent = title;
-    if (sourceEl && source) sourceEl.textContent = source;
-    if (linkEl && url) {
-        linkEl.textContent = url;
-        linkEl.href = url;
+    if (titleEl) titleEl.textContent = title || "";
+    if (sourceEl) sourceEl.textContent = source || "";
+    if (linkEl) {
+        linkEl.textContent = url || "";
+        linkEl.href = url || "#";
     }
 
     Logger.info("Detected article info updated", {
@@ -316,14 +397,23 @@ function renderBiasIndicators(indicators) {
     });
 }
 
+function resetBiasPill(pillEl) {
+    if (!pillEl) return;
+
+    pillEl.classList.remove("bias-pill--left", "bias-pill--right");
+    pillEl.style.background = "";
+    pillEl.style.color = "";
+}
+
 function renderSourceAnalysis(info) {
     if (!info) return;
-    if (sourceNameEl && info.name) sourceNameEl.textContent = info.name;
+    if (sourceNameEl) sourceNameEl.textContent = info.name || "Unknown source";
 
     if (sourcePillEl) {
+        resetBiasPill(sourcePillEl);
+
         if (info.bias) {
             sourcePillEl.textContent = info.bias;
-            sourcePillEl.classList.remove("bias-pill--left", "bias-pill--right");
 
             const lower = info.bias.toLowerCase();
             if (lower.includes("left")) {
@@ -339,20 +429,21 @@ function renderSourceAnalysis(info) {
         }
     }
 
-    if (sourceCredEl && info.credibility) {
-        sourceCredEl.textContent = `Credibility: ${info.credibility}`;
+    if (sourceCredEl) {
+        sourceCredEl.textContent = `Credibility: ${info.credibility || "Unknown"}`;
     }
-    if (sourceConfEl && info.confidence) {
-        sourceConfEl.textContent = `Confidence: ${info.confidence}`;
+    if (sourceConfEl) {
+        sourceConfEl.textContent = `Confidence: ${info.confidence || "Low"}`;
     }
     if (sourceProviderEl) {
         sourceProviderEl.textContent = info.provider ? `via ${info.provider}` : "";
     }
 
     if (articlePillEl) {
+        resetBiasPill(articlePillEl);
+
         if (info.bias) {
             articlePillEl.textContent = info.bias;
-            articlePillEl.classList.remove("bias-pill--left", "bias-pill--right");
 
             const lower = info.bias.toLowerCase();
             if (lower.includes("left")) {
@@ -369,7 +460,7 @@ function renderSourceAnalysis(info) {
     }
 }
 
-// ========== OTHERS ==========
+// ========== HELPERS ==========
 function faviconURL(u) {
     const url = new URL(chrome.runtime.getURL("/_favicon/"));
     url.searchParams.set("pageUrl", u);
@@ -390,7 +481,7 @@ analyzeBtn?.addEventListener("click", async () => {
     analysisDone = false;
     pendingResult = null;
 
-    minUiPromise = runMinimumLoadingTimeline(runId);
+    runMinimumLoadingTimeline(runId);
     await nextFrame();
 
     chrome.runtime.sendMessage({ type: "SUBTEXT_START_ANALYSIS" });
@@ -439,9 +530,13 @@ closeBtn?.addEventListener("click", () => {
 
 // ========== MESSAGE HANDLER ==========
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === "SUBTEXT_DETECTED_ARTICLE_INFO") {
-        Logger.info("Received detected article info");
-        renderDetectedArticle(msg.payload || {});
+    if (msg.type === "SUBTEXT_PAGE_STATE") {
+        Logger.info("Received page state update", {
+            mode: msg.payload?.mode || "unknown",
+            tabId: msg.payload?.tabId ?? null,
+            hasResult: Boolean(msg.payload?.result)
+        });
+        applyPageState(msg.payload || {});
     }
 
     if (msg.type === "SUBTEXT_HAS_API_KEY") {
@@ -451,8 +546,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
     }
 
+    if (msg.type === "SUBTEXT_ANALYSIS_ERROR") {
+        const message = msg.payload?.message || "Subtext could not analyze this page. Try again.";
+        Logger.error("Analysis error received", {
+            reason: msg.payload?.reason || "unknown",
+            message
+        });
+        recoverFromAnalysisError(message);
+    }
+
     if (msg.type === "SUBTEXT_RESULT") {
-        const res = msg.payload || {};
+        const tabId = msg.payload?.tabId ?? null;
+        const res = msg.payload?.result || {};
+
+        if (!matchesCurrentContext(tabId, res.url || "")) {
+            Logger.info("Ignoring stale analysis result", {
+                tabId,
+                url: res.url || ""
+            });
+            return;
+        }
 
         pendingResult = res;
         analysisDone = true;
@@ -463,14 +576,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
 
         maybeFinalizeRun(currentRunId);
-    }
-
-    if (msg.type === "SUBTEXT_EXCERPT_UPDATE" && msg.payload?.excerptHtml) {
-        const p = msg.payload || {};
-        Logger.info("Excerpt highlight update received", {
-            highlightCount: p.highlightCount || 0
-        });
-        renderBiasExcerpt(p.excerpt || "", p.excerptHtml || "");
     }
 });
 

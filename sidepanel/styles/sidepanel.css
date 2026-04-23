@@ -48,7 +48,7 @@
     transition: color 0.1s ease-out;
 }
 
-.panel-header-close:hover {
+.panel-header-close-btn:hover {
     color: var(--color-gray-700, oklch(.373 .034 259.733));
 }
 
@@ -677,6 +677,13 @@ font-size: 0.68rem;
 
 .analyze-button {
     margin: 20px;
+}
+
+.start-page-status {
+    margin: 8px 4px 0;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--color-red-700, oklch(.505 .213 27.518));
 }
 
 /* === SIDEPANEL EXCERPT HIGHLIGHT STYLES */

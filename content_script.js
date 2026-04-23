@@ -282,25 +282,62 @@ function clearBiasHighlights() {
     }
 }
 
+function getExcerptContainer(node) {
+    if (!node || !(node instanceof Element)) {
+        return null;
+    }
+
+    const preferredContainer = node.closest("p, li, blockquote, figcaption");
+    if (preferredContainer) {
+        return preferredContainer;
+    }
+
+    let current = node.parentElement;
+
+    while (current && current !== document.body) {
+        const text = (current.innerText || "").trim();
+        if (text.length >= 40 && text.length <= 900) {
+            return current;
+        }
+        current = current.parentElement;
+    }
+
+    return node.parentElement || null;
+}
+
 // ========== RETRIEVE EXCERPT ==========
 function getBestHighlightedExcerpt() { 
-    const highlightSelector = "span.bias-tag";
-    const candidates = Array.from(document.querySelectorAll("p"));
+    const highlights = Array.from(document.querySelectorAll("span.bias-tag"));
+    const candidates = new Map();
+
+    for (const highlight of highlights) {
+        const container = getExcerptContainer(highlight);
+        if (!container) {
+            continue;
+        }
+
+        const current = candidates.get(container) || 0;
+        candidates.set(container, current + 1);
+    }
 
     let bestEl = null;
     let bestCount = 0;
 
-    for (const p of candidates) {
-        const text = (p.innerText || "").trim();
-        const count = p.querySelectorAll(highlightSelector).length;
-        
-        if (count === 0) continue; 
+    for (const [candidate, count] of candidates.entries()) {
+        const text = (candidate.innerText || "").trim();
+        if (!text) continue;
+
         if (count > bestCount) {
-            bestEl = p;
+            bestEl = candidate;
             bestCount = count;
-        } else if (count === bestCount && bestEl) {
+            continue;
+        }
+
+        if (count === bestCount && bestEl) {
             const bestText = (bestEl.innerText || "").trim();
-            if (text.length > bestText.length) bestEl = p;
+            if (text.length > bestText.length && text.length <= 900) {
+                bestEl = candidate;
+            }
         }
     }
 
@@ -327,13 +364,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             hasTitle: Boolean(art.title),
             source: art.source || "Unknown"
         });
-        chrome.runtime.sendMessage({
-            type: "SUBTEXT_DETECTED_ARTICLE_INFO",
-            payload: {
-                title: art.title,
-                source: art.source,
-                url: art.url
-            }
+        sendResponse({
+            title: art.title,
+            source: art.source,
+            url: art.url
         });
         return true;
     }
@@ -346,10 +380,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             textLength: (art.text || "").length
         });
         sendResponse(art);
-        chrome.runtime.sendMessage({
-            type: "SUBTEXT_ARTICLE_DATA",
-            payload: art
-        });
         return true;
     }
 
@@ -359,19 +389,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         highlightBias(msg.annotations);
 
         const best = getBestHighlightedExcerpt();
-        if (best.excerptHtml) {
-            logInfo("Sending highlighted excerpt update", { highlightCount: best.highlightCount });
-            chrome.runtime.sendMessage({
-                type: "SUBTEXT_EXCERPT_UPDATE",
-                payload: {
-                    excerpt: best.excerpt,
-                    excerptHtml: best.excerptHtml,
-                    highlightCount: best.highlightCount
-                }
-            });
-        }
-
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, ...best });
         return true;
     }
 
