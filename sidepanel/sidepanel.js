@@ -156,7 +156,6 @@ function setResultsVisible() {
 }
 
 function clearRenderedResults() {
-    renderDetectedArticle({});
     renderAnalysisCard({});
     renderSummary([]);
     renderBiasExcerpt("");

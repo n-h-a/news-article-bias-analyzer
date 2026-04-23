@@ -367,7 +367,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({
             title: art.title,
             source: art.source,
-            url: art.url
+            url: art.url,
+            excerpt: art.excerpt
         });
         return true;
     }

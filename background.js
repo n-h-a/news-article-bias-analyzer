@@ -3,6 +3,8 @@
 const PANEL_PATH = "sidepanel/sidepanel.html";
 const ANALYSIS_CACHE_PREFIX = "analysis:";
 const MAX_ARTICLE_CHARS = 18000;
+const ANALYSIS_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+const ANALYSIS_CACHE_MAX_ENTRIES = 40;
 
 function logBackground(level, msg, data = {}) {
     const timestamp = new Date().toLocaleTimeString();
@@ -56,30 +58,149 @@ function normalizeUrl(url) {
     }
 }
 
+function normalizeCacheText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function buildArticlePreviewFingerprint(article = {}) {
+    const signatureSource = [
+        normalizeUrl(article.url || ""),
+        normalizeCacheText(article.title || ""),
+        normalizeCacheText(article.source || ""),
+        normalizeCacheText(article.excerpt || "")
+    ].join("||");
+
+    let hash = 2166136261;
+    for (let i = 0; i < signatureSource.length; i++) {
+        hash ^= signatureSource.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return `preview:v1:${(hash >>> 0).toString(16)}`;
+}
+
+function buildArticleContentFingerprint(article = {}) {
+    const signatureSource = [
+        buildArticlePreviewFingerprint(article),
+        normalizeCacheText(article.text || "")
+    ].join("||");
+
+    let hash = 2166136261;
+    for (let i = 0; i < signatureSource.length; i++) {
+        hash ^= signatureSource.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return `content:v1:${(hash >>> 0).toString(16)}`;
+}
+
+function isExpiredCacheEntry(entry) {
+    if (!entry?.cachedAt) return true;
+    return Date.now() - entry.cachedAt > ANALYSIS_CACHE_TTL_MS;
+}
+
+async function removeCachedAnalysisByKey(cacheKey) {
+    if (!cacheKey) return;
+    await chrome.storage.session.remove(cacheKey);
+}
+
+async function pruneAnalysisCache() {
+    const sessionEntries = await chrome.storage.session.get(null);
+    const cacheEntries = Object.entries(sessionEntries)
+        .filter(([key]) => key.startsWith(ANALYSIS_CACHE_PREFIX))
+        .map(([key, value]) => ({ key, value }));
+
+    const expiredKeys = cacheEntries
+        .filter(entry => isExpiredCacheEntry(entry.value))
+        .map(entry => entry.key);
+
+    if (expiredKeys.length) {
+        await chrome.storage.session.remove(expiredKeys);
+    }
+
+    const freshEntries = cacheEntries
+        .filter(entry => !expiredKeys.includes(entry.key))
+        .sort((a, b) => {
+            const aStamp = a.value?.lastAccessedAt || a.value?.cachedAt || 0;
+            const bStamp = b.value?.lastAccessedAt || b.value?.cachedAt || 0;
+            return bStamp - aStamp;
+        });
+
+    if (freshEntries.length <= ANALYSIS_CACHE_MAX_ENTRIES) {
+        return;
+    }
+
+    const keysToRemove = freshEntries
+        .slice(ANALYSIS_CACHE_MAX_ENTRIES)
+        .map(entry => entry.key);
+
+    if (keysToRemove.length) {
+        await chrome.storage.session.remove(keysToRemove);
+    }
+}
+
 function getAnalysisCacheKey(url) {
     const normalizedUrl = normalizeUrl(url);
     return normalizedUrl ? `${ANALYSIS_CACHE_PREFIX}${normalizedUrl}` : "";
 }
 
-async function getCachedAnalysis(url) {
+async function getCachedAnalysis(url, article = null) {
     const cacheKey = getAnalysisCacheKey(url);
     if (!cacheKey) return null;
 
     const cached = await chrome.storage.session.get(cacheKey);
-    return cached[cacheKey] || null;
+    const entry = cached[cacheKey] || null;
+
+    if (!entry) return null;
+
+    if (isExpiredCacheEntry(entry)) {
+        await removeCachedAnalysisByKey(cacheKey);
+        return null;
+    }
+
+    if (article) {
+        const currentPreviewFingerprint = buildArticlePreviewFingerprint(article);
+        if (entry.articlePreviewFingerprint && entry.articlePreviewFingerprint !== currentPreviewFingerprint) {
+            logInfo("Discarding cached analysis due to content mismatch", {
+                url: normalizeUrl(url)
+            });
+            await removeCachedAnalysisByKey(cacheKey);
+            return null;
+        }
+    }
+
+    await chrome.storage.session.set({
+        [cacheKey]: {
+            ...entry,
+            lastAccessedAt: Date.now()
+        }
+    });
+
+    return {
+        ...entry,
+        lastAccessedAt: Date.now()
+    };
 }
 
-async function setCachedAnalysis(url, result) {
+async function setCachedAnalysis(url, result, article = null) {
     const cacheKey = getAnalysisCacheKey(url);
     if (!cacheKey) return;
+
+    const articlePreviewFingerprint = buildArticlePreviewFingerprint(article || result || { url });
+    const articleContentFingerprint = buildArticleContentFingerprint(article || result || { url });
 
     await chrome.storage.session.set({
         [cacheKey]: {
             ...result,
+            articlePreviewFingerprint,
+            articleContentFingerprint,
             normalizedUrl: normalizeUrl(url),
-            cachedAt: Date.now()
+            cachedAt: Date.now(),
+            lastAccessedAt: Date.now()
         }
     });
+
+    await pruneAnalysisCache();
 }
 
 async function getActiveTab() {
@@ -204,7 +325,7 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     }
 
     const article = previewResult.resp;
-    const cachedResult = await getCachedAnalysis(article.url);
+    const cachedResult = await getCachedAnalysis(article.url, article);
 
     if (cachedResult) {
         const highlightRestore = await sendMessageToTab(tabId, {
@@ -215,7 +336,7 @@ async function syncPanelStateForTab(tabId, tabUrl) {
         if (highlightRestore.ok && highlightRestore.resp?.excerptHtml) {
             cachedResult.excerpt = highlightRestore.resp.excerpt || cachedResult.excerpt || "";
             cachedResult.excerptHtml = highlightRestore.resp.excerptHtml || cachedResult.excerptHtml || "";
-            await setCachedAnalysis(article.url, cachedResult);
+            await setCachedAnalysis(article.url, cachedResult, article);
         } else if (!highlightRestore.ok) {
             logError("Failed to restore cached highlights", {
                 tabId,
@@ -563,7 +684,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     excerptHtml
                 });
 
-                await setCachedAnalysis(articleUrl, payload);
+                await setCachedAnalysis(articleUrl, payload, art);
 
                 const activeTab = await getActiveTab();
                 if (!activeTab?.id) return;
