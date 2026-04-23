@@ -39,6 +39,7 @@ const linkEl = document.getElementById("article-header-link");
 const analyzingCardImg = document.getElementById("analyzing-card-icon-img");
 const analyzingCardLabel = document.getElementById("analyzing-card-label");
 const analyzingArticleTitle = document.getElementById("analyzing-card-article-title");
+const DEFAULT_ANALYSIS_CARD_ICON = "../icons/source.png";
 
 const summaryList = document.getElementById("summary-section-list");
 const biasExcerpt = document.getElementById("bias-section-excerpt");
@@ -320,9 +321,9 @@ function renderAnalysisCard(data = {}) {
     if (analyzingCardLabel) { 
         analyzingCardLabel.textContent = source || "Analyzing full article"; 
     }
-    if (analyzingCardImg && url) {
-        const sourceIcon = faviconURL(url);
-        analyzingCardImg.src = sourceIcon || analyzingCardImg.src;
+    if (analyzingCardImg) {
+        const sourceIcon = url ? faviconURL(url) : DEFAULT_ANALYSIS_CARD_ICON;
+        analyzingCardImg.src = sourceIcon || DEFAULT_ANALYSIS_CARD_ICON;
     }
 }
 
