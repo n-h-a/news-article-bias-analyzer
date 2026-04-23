@@ -86,6 +86,11 @@ function setStartPageStatus(message = "") {
     startPageStatusEl.classList.remove("hidden");
 }
 
+function setApiWarningVisible(hasKey) {
+    if (!apiWarningCard) return;
+    apiWarningCard.style.display = hasKey ? "none" : "block";
+}
+
 function recoverFromAnalysisError(message) {
     cancelPendingAnalysisRun();
     showStartPage();
@@ -333,7 +338,7 @@ function renderDetectedArticle(data = {}) {
     if (detectedTitleEl) detectedTitleEl.textContent = title || defaultTitle;
     if (detectedSourceEl) detectedSourceEl.textContent = source || defaultSource;
     if (detectedUrlEl) {
-        detectedUrlEl.textContent = defaultUrl;
+        detectedUrlEl.textContent = url || defaultUrl;
         detectedUrlEl.href = url || "#";
     }
 
@@ -580,9 +585,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg.type === "SUBTEXT_HAS_API_KEY") {
         Logger.info("Received API key status", { hasKey: Boolean(msg.payload?.hasKey) });
-        if (apiWarningCard) {
-            apiWarningCard.style.display = msg.payload?.hasKey ? "none" : "block";
-        }
+        setApiWarningVisible(Boolean(msg.payload?.hasKey));
     }
 
     if (msg.type === "SUBTEXT_ANALYSIS_ERROR") {
@@ -616,6 +619,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         maybeFinalizeRun(currentRunId);
     }
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes.openai_api_key) {
+        return;
+    }
+
+    const nextValue = (changes.openai_api_key.newValue || '').trim();
+    setApiWarningVisible(Boolean(nextValue));
+    Logger.info('Updated API warning card from storage change', {
+        hasKey: Boolean(nextValue)
+    });
 });
 
 Logger.info("Side panel initialized");
