@@ -5,7 +5,6 @@ import Logger from '../logger.js';
 let panelPort = null;
 let panelWindowId = null;
 let reconnectTimerId = null;
-let hasValidApiConfiguration = false;
 let isCurrentPageArticle = false;
 let isAnalysisInProgress = false;
 
@@ -14,7 +13,7 @@ function syncAnalyzeButtonState() {
         return;
     }
 
-    analyzeBtn.disabled = isAnalysisInProgress || !isCurrentPageArticle || !hasValidApiConfiguration;
+    analyzeBtn.disabled = isAnalysisInProgress || !isCurrentPageArticle;
 }
 
 function handlePanelMessage(msg) {
@@ -25,20 +24,6 @@ function handlePanelMessage(msg) {
             hasResult: Boolean(msg.payload?.result)
         });
         applyPageState(msg.payload || {});
-    }
-
-    if (msg.type === "SUBTEXT_API_CONFIGURATION_STATUS") {
-        const hasKey = Boolean(msg.payload?.hasKey);
-        const hasModel = Boolean(msg.payload?.hasModel);
-        hasValidApiConfiguration = Boolean(msg.payload?.hasValidConfiguration);
-
-        Logger.info("Received API configuration status", {
-            hasKey,
-            hasModel,
-            hasValidApiConfiguration
-        });
-        setApiConfigurationWarningVisible(hasValidApiConfiguration);
-        syncAnalyzeButtonState();
     }
 
     if (msg.type === "SUBTEXT_ANALYSIS_ERROR") {
@@ -84,7 +69,6 @@ function initializePanelSession() {
             type: "SUBTEXT_PANEL_CONNECTED",
             payload: { windowId: panelWindowId }
         });
-        panelPort.postMessage({ type: "SUBTEXT_CHECK_API_CONFIGURATION" });
         panelPort.postMessage({ type: "SUBTEXT_PANEL_READY" });
         Logger.info("Panel session initialized", { windowId: panelWindowId });
     } catch (error) {
@@ -170,42 +154,6 @@ function openSettings() {
     chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html") });
 }
 
-async function refreshApiConfigurationFromStorage() {
-    try {
-        const stored = await chrome.storage.local.get([
-            'openai_api_key',
-            'openai_model',
-            'openai_api_config_valid',
-            'openai_api_config_validated_model'
-        ]);
-
-        const nextApiKey = String(stored.openai_api_key || '').trim();
-        const nextModel = String(stored.openai_model || '').trim();
-        const nextValidatedModel = String(stored.openai_api_config_validated_model || '').trim();
-        const nextIsValid = stored.openai_api_config_valid === true;
-
-        hasValidApiConfiguration = Boolean(
-            nextApiKey &&
-            nextModel &&
-            nextIsValid &&
-            nextValidatedModel === nextModel
-        );
-
-        setApiConfigurationWarningVisible(hasValidApiConfiguration);
-        syncAnalyzeButtonState();
-
-        Logger.info('Refreshed API configuration state from storage', {
-            hasKey: Boolean(nextApiKey),
-            hasModel: Boolean(nextModel),
-            hasValidApiConfiguration
-        });
-    } catch (error) {
-        Logger.error('Failed to refresh API configuration from storage', {
-            error: String(error)
-        });
-    }
-}
-
 
 // ========== PAGE ELEMENTS ==========
 const pageStart = document.getElementById("start-page");
@@ -216,8 +164,6 @@ const detectedTopIconEl = document.getElementById("detected-top-icon");
 const detectedTopTitleEl = document.getElementById("detected-top-title");
 const detectedTopTextEl = document.getElementById("detected-top-text");
 const detectedCardLabelEl = document.getElementById("detected-article-card-label");
-const apiWarningCard = document.getElementById("api-warning-card");
-const openSettingsBtn = document.getElementById("btn-api-warning-card-open-settings");
 const detectedTitleEl = document.getElementById("detected-article-card-title");
 const detectedSourceEl = document.getElementById("detected-article-card-source");
 const detectedUrlEl = document.getElementById("detected-article-card-url");
@@ -305,11 +251,6 @@ function setStartPageStatus(message = "", tone = "info") {
     if (startPageStatusAccentEl) {
         startPageStatusAccentEl.textContent = tone === "error" ? "!" : tone === "warning" ? "?" : "i";
     }
-}
-
-function setApiConfigurationWarningVisible(hasValidConfiguration) {
-    if (!apiWarningCard) return;
-    apiWarningCard.style.display = hasValidConfiguration ? "none" : "block";
 }
 
 function recoverFromAnalysisError(message) {
@@ -784,11 +725,6 @@ analyzeBtn?.addEventListener("click", async () => {
     }
 });
 
-openSettingsBtn?.addEventListener("click", () => {
-    Logger.info("Opening settings from warning card");
-    openSettings();
-});
-
 copyBtn?.addEventListener("click", async () => {
     if (!summaryList) return;
     const items = Array.from(summaryList.querySelectorAll("li"))
@@ -818,25 +754,6 @@ seeContextBtn?.addEventListener("click", () => {
 settingsBtn?.addEventListener("click", () => {
     Logger.info("Opening settings from actions");
     openSettings();
-});
-
-chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local') {
-        return;
-    }
-
-    const affectsApiConfiguration = Boolean(
-        changes.openai_api_key ||
-        changes.openai_model ||
-        changes.openai_api_config_valid ||
-        changes.openai_api_config_validated_model
-    );
-
-    if (!affectsApiConfiguration) {
-        return;
-    }
-
-    void refreshApiConfigurationFromStorage();
 });
 
 Logger.info("Side panel initialized");

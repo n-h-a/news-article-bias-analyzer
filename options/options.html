@@ -195,38 +195,19 @@
         <main>
             <section class="hero">
                 <p class="eyebrow">Subtext Settings</p>
-                <h1>Control how analysis data is handled.</h1>
+                <h1>Manage your Subtext data.</h1>
                 <p class="summary">
-                    Subtext validates your saved API configuration with OpenAI in Settings and sends article text to OpenAI when you request an analysis. Your API key is stored in extension storage on this browser until you remove it.
+                    Subtext sends article text to its analysis server when you request an analysis. Results are cached in session storage so the current browsing session can restore previous results.
                 </p>
             </section>
 
             <div class="grid">
                 <section class="card">
-                    <h2>API configuration</h2>
-                    <label>
-                        OpenAI API key
-                        <input id="apikey" type="password" placeholder="sk-...">
-                    </label>
-                    <label>
-                        Model
-                        <input id="model" value="gpt-4o-mini">
-                    </label>
-                    <div class="actions">
-                        <button id="save" class="primary">Save settings</button>
-                        <button id="forget" class="danger">Forget</button>
-                    </div>
-                    <p class="small">
-                        Subtext uses your API key directly from this extension. Your OpenAI account is billed for any analysis requests made with that key.
-                    </p>
-                </section>
-
-                <section class="card">
                     <h2>Data handling</h2>
                     <ul class="list">
-                        <li>Article title, URL, source, excerpt, and article text are processed to generate a summary and bias indicators.</li>
+                        <li>Article title, URL, source, excerpt, and article text are sent to the Subtext analysis server to generate a summary and language signal indicators.</li>
                         <li>Cached analysis results are stored in session storage so the current browsing session can restore previous results.</li>
-                        <li>You can remove the stored API key and clear cached analysis data from this page.</li>
+                        <li>You can clear cached analysis data from this page.</li>
                     </ul>
                     <div class="actions">
                         <button id="clear-cache" class="secondary">Clear cached analyses</button>

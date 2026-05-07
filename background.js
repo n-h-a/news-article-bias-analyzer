@@ -4,7 +4,12 @@ const ANALYSIS_CACHE_PREFIX = "analysis:";
 const MAX_ARTICLE_CHARS = 18000;
 const ANALYSIS_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const ANALYSIS_CACHE_MAX_ENTRIES = 40;
-const OPENAI_REQUEST_TIMEOUT_MS = 45000;
+const ANALYSIS_REQUEST_TIMEOUT_MS = 45000;
+
+const IS_DEV = !("update_url" in chrome.runtime.getManifest());
+const BACKEND_API_URL = IS_DEV
+    ? "http://localhost:3000/analyze"
+    : "https://subtext-api-production-82b5.up.railway.app/analyze";
 
 const panelSessions = new Map();
 
@@ -110,58 +115,7 @@ async function configureActionToOpenSidePanel() {
 }
 
 
-// ========== SETTINGS ==========
-function getApiSettings(cb) {
-    chrome.storage.local.get(["openai_api_key", "openai_model"], data => {
-        const key = (data.openai_api_key || "").trim();
-        const model = data.openai_model || "gpt-4o-mini";
-        cb(Boolean(key), key, model);
-    });
-}
 
-function getApiConfigurationStatus(cb) {
-    chrome.storage.local.get([
-        "openai_api_key",
-        "openai_model",
-        "openai_api_config_valid",
-        "openai_api_config_validated_model"
-    ], data => {
-        const apiKey = (data.openai_api_key || "").trim();
-        const model = (data.openai_model || "").trim();
-        const validatedModel = (data.openai_api_config_validated_model || "").trim();
-        const hasValidConfiguration = Boolean(
-            apiKey &&
-            model &&
-            data.openai_api_config_valid === true &&
-            validatedModel === model
-        );
-
-        cb({
-            hasKey: Boolean(apiKey),
-            hasModel: Boolean(model),
-            hasValidConfiguration,
-            model
-        });
-    });
-}
-
-async function markStoredApiConfigurationInvalid() {
-    const stored = await chrome.storage.local.get(["openai_model"]);
-    const model = (stored.openai_model || "").trim();
-
-    await chrome.storage.local.set({
-        openai_api_config_valid: false,
-        openai_api_config_validated_model: model
-    });
-}
-
-function shouldInvalidateStoredApiConfiguration({ status, code = "" }) {
-    if (status === 401 || status === 403 || status === 404) {
-        return true;
-    }
-
-    return String(code || "").trim().toLowerCase() === "model_not_found";
-}
 
 function openOptionsPage() {
     logInfo("Opening options page");
@@ -591,179 +545,53 @@ function invalidUrl(url) {
   return blockedPrefixes.some(prefix => url.startsWith(prefix));
 }
 
-function getOpenAIErrorMessage({ status, detail = "", code = "", model = "" }) {
-    const normalizedDetail = String(detail || "").trim();
-    const normalizedCode = String(code || "").trim();
-
-    if (status === 401) {
-        return "OpenAI rejected the saved API key. Update it in Settings and try again.";
-    }
-
-    if (status === 403) {
-        return model
-            ? `This OpenAI API key does not have permission to use the model "${model}".`
-            : "This OpenAI API key does not have permission to complete this request.";
-    }
-
-    if (status === 404) {
-        return model
-            ? `The model "${model}" could not be found for this account. Choose another model in Settings.`
-            : "The requested OpenAI resource could not be found.";
-    }
-
-    if (status === 429) {
-        if (normalizedCode === "insufficient_quota" || /insufficient_quota|quota/i.test(normalizedDetail)) {
-            return "OpenAI reports that this account is out of quota. Check billing or use a different API key.";
-        }
-
-        return "OpenAI rate-limited this request. Wait a moment and try again.";
-    }
-
-    if (status >= 500) {
-        return "OpenAI is temporarily unavailable. Try again in a moment.";
-    }
-
-    if (normalizedDetail) {
-        return normalizedDetail;
-    }
-
-    return `OpenAI request failed with status ${status}.`;
-}
-
-// ========== LLM CALL ==========
-async function callBiasModel({ apiKey, model, articleTitle, articleUrl, articleSource, articleText }) {
-    const endpoint = "https://api.openai.com/v1/chat/completions";
-
-    const system = `
-You are a media analysis assistant. Read the article and return JSON in this exact shape:
-
-{
-  "bullet_points": [
-    "1–2 sentence key point 1",
-    "1–2 sentence key point 2",
-    "1–2 sentence key point 3",
-    "1–2 sentence key point 4",
-    "1–2 sentence key point 5",
-    "1–2 sentence key point 6"
-  ],
-  "indicators": [
-    { "phrase": "exact phrase from article", "bias": "left|right|loaded", "reason": "short explanation" }
-  ],
-  "source_analysis": {
-    "leaning": "Left|Center-left|Center|Center-right|Right|Mixed|Unknown",
-    "confidence": "High|Medium|Low",
-    "credibility": "High|Medium|Low|Unknown"
-  }
-}
-
-Rules:
-- Stay neutral, factual, concise.
-- ALWAYS return 6 bullet_points, 1–2 sentences each.
-- indicators must match exact article text and include a brief reason.
-- source_analysis should describe typical editorial leaning of the outlet, not the intent of individual journalists or the article.
-- If you are unsure, use leaning="Unknown" with confidence="Low".
-- Output valid JSON only, no code fences.
-
-Examples:
-- Left bias: "progressive reform" — frames liberal policy positively.
-- Left bias: "climate justice" — moral framing supporting environmental activism.
-- Right bias: "radical liberals" — portrays opposing ideology as extreme.
-- Right bias: "leftist agenda" — implies manipulative political intent.
-- Loaded: "shocking revelation" — evokes emotional reaction.
-- Loaded: "heroic stand" — praises one side or actor emotionally.
-    `.trim();
-
-    const user = `
-Title: ${articleTitle || "Unknown"}
-URL: ${articleUrl || "Unknown"}
-Source: ${articleSource || "Unknown"}
-Article:
-${articleText}
-    `.trim();
-
-    const body = {
-        model,
-        messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-        ],
-        temperature: 0.4
-    };
-
+// ========== BACKEND CALL ==========
+async function callBackendAnalyze({ articleTitle, articleUrl, articleSource, articleText }) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), OPENAI_REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_REQUEST_TIMEOUT_MS);
 
     let res;
     try {
-        res = await fetch(endpoint, {
+        res = await fetch(BACKEND_API_URL, {
             method: "POST",
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ articleTitle, articleUrl, articleSource, articleText }),
             signal: controller.signal
         });
     } catch (error) {
         if (error?.name === "AbortError") {
-            throw new Error("OpenAI took too long to respond. Try again in a moment.");
+            throw new Error("The analysis is taking longer than expected. Try again in a moment.");
         }
-
-        throw error;
+        throw new Error("Subtext could not reach the analysis server. Check your connection and try again.");
     } finally {
         clearTimeout(timeoutId);
     }
 
     if (!res.ok) {
-        let detail = "";
-        let code = "";
-
+        let message = "";
         try {
             const errorData = await res.json();
-            detail = errorData?.error?.message || "";
-            code = errorData?.error?.code || "";
+            message = errorData?.error || errorData?.message || "";
         } catch {
-            detail = await res.text().catch(() => "");
+            message = await res.text().catch(() => "");
         }
 
-        const error = new Error(getOpenAIErrorMessage({
-            status: res.status,
-            detail,
-            code,
-            model
-        }));
-        error.openAIStatus = res.status;
-        error.openAICode = code;
-        throw error;
+        if (res.status === 429) {
+            throw new Error(message || "You've reached the analysis limit for today. Try again tomorrow.");
+        }
+
+        throw new Error(message || "Subtext could not complete the analysis. Try again in a moment.");
     }
 
     const data = await res.json();
-    let content = data?.choices?.[0]?.message?.content?.trim() || "";
 
-    // Strip code fences if model added them.
-    if (content.startsWith("```")) {
-        content = content.replace(/^```(json)?/i, "").replace(/```$/, "").trim();
+    if (!Array.isArray(data.bullet_points)) { data.bullet_points = []; }
+    if (!Array.isArray(data.indicators)) { data.indicators = []; }
+    if (!data.source_analysis || typeof data.source_analysis !== "object") {
+        data.source_analysis = { leaning: "Unknown", confidence: "Low", credibility: "Unknown" };
     }
 
-    // Default Structure
-    let parsed;
-    try {
-        parsed = JSON.parse(content);
-    } catch (err) {
-        logError("Failed to parse model response as JSON", {
-            error: String(err),
-            contentPreview: content.slice(0, 500)
-        });
-        throw new Error("Model returned invalid JSON");
-    }
-
-    if (!Array.isArray(parsed.bullet_points)) { parsed.bullet_points = []; }
-    if (!Array.isArray(parsed.indicators)) { parsed.indicators = []; }
-    if (!parsed.source_analysis || typeof parsed.source_analysis !== "object") {
-        parsed.source_analysis = { leaning: "Unknown", confidence: "Low", credibility: "Unknown" };
-    }
-
-    return parsed;
+    return data;
 }
 
 // ========== MESSAGE HUB ==========
@@ -831,22 +659,6 @@ chrome.runtime.onConnect.addListener((port) => {
             return;
         }
 
-        if (msg.type === "SUBTEXT_CHECK_API_CONFIGURATION") {
-            logInfo("Received API configuration status check request", { windowId: sessionWindowId });
-            getApiConfigurationStatus(({ hasKey, hasModel, hasValidConfiguration, model }) => {
-                postToPanel(sessionWindowId, {
-                    type: "SUBTEXT_API_CONFIGURATION_STATUS",
-                    payload: {
-                        hasKey,
-                        hasModel,
-                        hasValidConfiguration,
-                        model
-                    }
-                });
-            });
-            return;
-        }
-
         if (msg.type === "SUBTEXT_PANEL_READY") {
             logInfo("Side panel reported ready", { windowId: sessionWindowId });
             (async () => {
@@ -870,38 +682,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 requestedUrl: msg.payload?.url || ""
             });
 
-            getApiConfigurationStatus(({ hasKey, hasModel, hasValidConfiguration, model }) => {
-                if (!hasValidConfiguration) {
-                    logInfo("Analysis blocked because API configuration is invalid", {
-                        windowId: sessionWindowId,
-                        hasKey,
-                        hasModel
-                    });
-                    postToPanel(sessionWindowId, {
-                        type: "SUBTEXT_API_CONFIGURATION_STATUS",
-                        payload: {
-                            hasKey,
-                            hasModel,
-                            hasValidConfiguration: false,
-                            model: model || ""
-                        }
-                    });
-                    sendAnalysisError(
-                        sessionWindowId,
-                        "invalid-api-configuration",
-                        "Save a valid OpenAI API key and model in Settings before analyzing this article."
-                    );
-                    openOptionsPage();
-                    return;
-                }
-
-                getApiSettings((hasSavedKey, apiKey, model) => {
-                    if (!hasSavedKey) {
-                        sendAnalysisError(sessionWindowId, "missing-api-key", "Add your OpenAI API key in Settings to analyze this article.");
-                        return;
-                    }
-
-                    (async () => {
+            (async () => {
                         const requestedTabId = msg.payload?.tabId;
                         const requestedUrl = normalizeUrl(msg.payload?.url || "");
                         let tab = null;
@@ -950,8 +731,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
                         logInfo("Requesting article content from tab", {
                             windowId: sessionWindowId,
-                            tabId: tab.id,
-                            model
+                            tabId: tab.id
                         });
 
                         const result = await sendMessageToTab(tab.id, {
@@ -993,7 +773,6 @@ chrome.runtime.onConnect.addListener((port) => {
                             source: articleSource || "Unknown",
                             textLength: articleText.length,
                             trimmedTextLength: trimmedArticleText.length,
-                            model,
                             tabId: tab.id,
                             runId
                         });
@@ -1001,21 +780,18 @@ chrome.runtime.onConnect.addListener((port) => {
                         let llmResult;
 
                         try {
-                            logInfo("Calling bias model", {
+                            logInfo("Calling analysis backend", {
                                 windowId: sessionWindowId,
-                                model,
                                 articleTitle,
                                 runId
                             });
-                            llmResult = await callBiasModel({
-                                apiKey,
-                                model,
+                            llmResult = await callBackendAnalyze({
                                 articleTitle,
                                 articleUrl,
                                 articleSource,
-                                articleText: trimmedArticleText,
+                                articleText: trimmedArticleText
                             });
-                            logInfo("Bias model returned result", {
+                            logInfo("Analysis backend returned result", {
                                 windowId: sessionWindowId,
                                 bulletCount: Array.isArray(llmResult.bullet_points) ? llmResult.bullet_points.length : 0,
                                 indicatorCount: Array.isArray(llmResult.indicators) ? llmResult.indicators.length : 0,
@@ -1023,29 +799,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 runId
                             });
                         } catch (err) {
-                            if (shouldInvalidateStoredApiConfiguration({
-                                status: err?.openAIStatus,
-                                code: err?.openAICode
-                            })) {
-                                try {
-                                    await markStoredApiConfigurationInvalid();
-                                    const nextStatus = await new Promise(resolve => {
-                                        getApiConfigurationStatus(resolve);
-                                    });
-
-                                    postToPanel(sessionWindowId, {
-                                        type: "SUBTEXT_API_CONFIGURATION_STATUS",
-                                        payload: nextStatus
-                                    });
-                                } catch (storageError) {
-                                    logError("Failed to invalidate stored API configuration", {
-                                        windowId: sessionWindowId,
-                                        error: String(storageError)
-                                    });
-                                }
-                            }
-
-                            logError("LLM call failed", {
+                            logError("Backend call failed", {
                                 windowId: sessionWindowId,
                                 runId,
                                 error: String(err)
@@ -1126,14 +880,12 @@ chrome.runtime.onConnect.addListener((port) => {
                                 result: payload
                             }
                         });
-                    })().catch(error => {
-                        logError("Analysis orchestration failed", {
-                            windowId: sessionWindowId,
-                            error: String(error)
-                        });
-                        sendAnalysisError(sessionWindowId, "analysis-failed", "Subtext could not complete the analysis. Try again in a moment.");
-                    });
+            })().catch(error => {
+                logError("Analysis orchestration failed", {
+                    windowId: sessionWindowId,
+                    error: String(error)
                 });
+                sendAnalysisError(sessionWindowId, "analysis-failed", "Subtext could not complete the analysis. Try again in a moment.");
             });
             return;
         }
