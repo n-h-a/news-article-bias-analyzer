@@ -220,6 +220,24 @@ function isSkippableNode(node) {
     );
 }
 
+function getHighlightRoot() {
+    const candidates = [
+        document.querySelector("article"),
+        document.querySelector("main article"),
+        document.querySelector("main"),
+        document.querySelector("[role='main']")
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+        const text = normalizeTextForHeuristics(candidate?.innerText || "");
+        if (getWordCount(text) >= 120) {
+            return candidate;
+        }
+    }
+
+    return document.body;
+}
+
 function serializeWithHighlights(rootEl) {
     const out = [];
     
@@ -286,9 +304,15 @@ function highlightBias(annotations) {
     // Build case insensitive global regex that matches any of the phrases.
     const escaped = items.map(x => escapeRegExp(x.phrase));
     const pattern = new RegExp("(" + escaped.join("|") + ")", "gi");
+    const highlightRoot = getHighlightRoot();
+
+    if (!highlightRoot) {
+        logInfo("No highlight root available for annotations");
+        return;
+    }
 
     // Use TreeWalker to find text nodes.
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    const walker = document.createTreeWalker(highlightRoot, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
             return isSkippableNode(node)
                 ? NodeFilter.FILTER_REJECT
@@ -351,6 +375,7 @@ function highlightBias(annotations) {
     }
 
     logInfo("Bias highlights applied", {
+        highlightRoot: highlightRoot.tagName || "BODY",
         annotationCount: items.length,
         matchCount
     });
@@ -483,13 +508,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         const best = getBestHighlightedExcerpt();
         sendResponse({ ok: true, ...best });
-        return true;
-    }
-
-    if (msg.type === "CLEAR_HIGHLIGHTS") {
-        logInfo("Received clear highlights request");
-        clearBiasHighlights();
-        sendResponse({ ok: true });
         return true;
     }
 });

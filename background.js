@@ -1,10 +1,12 @@
 // background.js
 
-const PANEL_PATH = "sidepanel/sidepanel.html";
 const ANALYSIS_CACHE_PREFIX = "analysis:";
 const MAX_ARTICLE_CHARS = 18000;
 const ANALYSIS_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const ANALYSIS_CACHE_MAX_ENTRIES = 40;
+const OPENAI_REQUEST_TIMEOUT_MS = 45000;
+
+const panelSessions = new Map();
 
 function logBackground(level, msg, data = {}) {
     const timestamp = new Date().toLocaleTimeString();
@@ -14,6 +16,83 @@ function logBackground(level, msg, data = {}) {
 
 const logInfo = (msg, data = {}) => logBackground("info", msg, data);
 const logError = (msg, data = {}) => logBackground("error", msg, data);
+
+function getPanelSession(windowId) {
+    return typeof windowId === "number" ? panelSessions.get(windowId) || null : null;
+}
+
+function isSidePanelOpen(windowId) {
+    if (typeof windowId === "number") {
+        return Boolean(getPanelSession(windowId)?.port);
+    }
+
+    return panelSessions.size > 0;
+}
+
+function setPanelSession(windowId, session) {
+    if (typeof windowId !== "number") {
+        return;
+    }
+
+    panelSessions.set(windowId, {
+        windowId,
+        currentTabId: null,
+        currentUrl: "",
+        currentRunId: 0,
+        ...session
+    });
+}
+
+function clearPanelSession(windowId, port = null) {
+    if (typeof windowId !== "number") {
+        return;
+    }
+
+    const existing = panelSessions.get(windowId);
+    if (!existing) {
+        return;
+    }
+
+    if (port && existing.port !== port) {
+        return;
+    }
+
+    panelSessions.delete(windowId);
+}
+
+function updatePanelSession(windowId, updates = {}) {
+    const session = getPanelSession(windowId);
+    if (!session) {
+        return null;
+    }
+
+    const next = {
+        ...session,
+        ...updates
+    };
+
+    panelSessions.set(windowId, next);
+    return next;
+}
+
+function postToPanel(windowId, msg) {
+    const session = getPanelSession(windowId);
+    if (!session?.port) {
+        return false;
+    }
+
+    try {
+        session.port.postMessage(msg);
+        return true;
+    } catch (error) {
+        logError("Failed to post message to side panel", {
+            windowId,
+            type: msg?.type || "unknown",
+            error: String(error)
+        });
+        return false;
+    }
+}
 
 async function configureActionToOpenSidePanel() {
     if (!chrome.sidePanel?.setPanelBehavior) {
@@ -40,6 +119,50 @@ function getApiSettings(cb) {
     });
 }
 
+function getApiConfigurationStatus(cb) {
+    chrome.storage.local.get([
+        "openai_api_key",
+        "openai_model",
+        "openai_api_config_valid",
+        "openai_api_config_validated_model"
+    ], data => {
+        const apiKey = (data.openai_api_key || "").trim();
+        const model = (data.openai_model || "").trim();
+        const validatedModel = (data.openai_api_config_validated_model || "").trim();
+        const hasValidConfiguration = Boolean(
+            apiKey &&
+            model &&
+            data.openai_api_config_valid === true &&
+            validatedModel === model
+        );
+
+        cb({
+            hasKey: Boolean(apiKey),
+            hasModel: Boolean(model),
+            hasValidConfiguration,
+            model
+        });
+    });
+}
+
+async function markStoredApiConfigurationInvalid() {
+    const stored = await chrome.storage.local.get(["openai_model"]);
+    const model = (stored.openai_model || "").trim();
+
+    await chrome.storage.local.set({
+        openai_api_config_valid: false,
+        openai_api_config_validated_model: model
+    });
+}
+
+function shouldInvalidateStoredApiConfiguration({ status, code = "" }) {
+    if (status === 401 || status === 403 || status === 404) {
+        return true;
+    }
+
+    return String(code || "").trim().toLowerCase() === "model_not_found";
+}
+
 function openOptionsPage() {
     logInfo("Opening options page");
     if (chrome.runtime.openOptionsPage) {
@@ -49,13 +172,13 @@ function openOptionsPage() {
     }
 }
 
-function sendToPanel(msg) {
-    logInfo("Sending message to side panel", { type: msg?.type || "unknown" });
-    chrome.runtime.sendMessage(msg);
-}
-
-function sendAnalysisError(reason, message) {
-    sendToPanel({
+function sendAnalysisError(windowId, reason, message) {
+    logInfo("Sending analysis error to side panel", {
+        windowId,
+        reason,
+        type: "SUBTEXT_ANALYSIS_ERROR"
+    });
+    postToPanel(windowId, {
         type: "SUBTEXT_ANALYSIS_ERROR",
         payload: { reason, message }
     });
@@ -139,6 +262,18 @@ async function pruneAnalysisCache() {
     }
 }
 
+async function clearAnalysisCache() {
+    const sessionEntries = await chrome.storage.session.get(null);
+    const cacheKeys = Object.keys(sessionEntries)
+        .filter(key => key.startsWith(ANALYSIS_CACHE_PREFIX));
+
+    if (cacheKeys.length) {
+        await chrome.storage.session.remove(cacheKeys);
+    }
+
+    return cacheKeys.length;
+}
+
 function getAnalysisCacheKey(url) {
     const normalizedUrl = normalizeUrl(url);
     return normalizedUrl ? `${ANALYSIS_CACHE_PREFIX}${normalizedUrl}` : "";
@@ -201,8 +336,12 @@ async function setCachedAnalysis(url, result, article = null) {
     await pruneAnalysisCache();
 }
 
-async function getActiveTab() {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+async function getActiveTabForWindow(windowId) {
+    if (typeof windowId !== "number") {
+        return null;
+    }
+
+    const tabs = await chrome.tabs.query({ active: true, windowId });
     return tabs?.[0] || null;
 }
 
@@ -222,7 +361,7 @@ function buildResultPayload({ art, llmResult, excerpt, excerptHtml }) {
             bias: sourceAnalysis.leaning || "Unknown",
             credibility: sourceAnalysis.credibility || "Unknown",
             confidence: sourceAnalysis.confidence || "Low",
-            provider: "Subtext (LLM)"
+            provider: "Subtext AI"
         }
     };
 }
@@ -258,10 +397,16 @@ function buildContextPageUrl(article = {}) {
     return url.toString();
 }
 
-function sendPageStateToPanel({ tabId, article, mode, result, statusMessage }) {
-    sendToPanel({
+function sendPageStateToPanel({ windowId, tabId, article, mode, result, statusMessage }) {
+    logInfo("Sending page state to side panel", {
+        windowId,
+        tabId,
+        mode: mode || "start"
+    });
+    postToPanel(windowId, {
         type: "SUBTEXT_PAGE_STATE",
         payload: {
+            windowId,
             tabId,
             article: article || null,
             mode,
@@ -279,11 +424,17 @@ function buildHighlightAnnotations(indicators = []) {
     }));
 }
 
-async function syncPanelStateForTab(tabId, tabUrl) {
-    if (!tabId) return;
+async function syncPanelStateForTab(windowId, tabId, tabUrl) {
+    if (typeof windowId !== "number" || !tabId) return;
+
+    updatePanelSession(windowId, {
+        currentTabId: tabId,
+        currentUrl: tabUrl || ""
+    });
 
     if (invalidUrl(tabUrl)) {
         sendPageStateToPanel({
+            windowId,
             tabId,
             article: {
                 title: "Unsupported page",
@@ -299,6 +450,7 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     const ok = await ensureContentScript(tabId);
     if (!ok) {
         sendPageStateToPanel({
+            windowId,
             tabId,
             article: null,
             mode: "start",
@@ -310,10 +462,12 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     const previewResult = await sendMessageToTab(tabId, { type: "SUBTEXT_GET_ARTICLE_INFO" });
     if (!previewResult.ok || !previewResult.resp) {
         logError("Failed to retrieve article preview", {
+            windowId,
             tabId,
             error: previewResult.error || "Unknown error"
         });
         sendPageStateToPanel({
+            windowId,
             tabId,
             article: null,
             mode: "start",
@@ -325,6 +479,7 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     const article = previewResult.resp;
     if (!article.isArticle) {
         sendPageStateToPanel({
+            windowId,
             tabId,
             article,
             mode: "start",
@@ -354,6 +509,7 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     }
 
     sendPageStateToPanel({
+        windowId,
         tabId,
         article,
         mode: cachedResult ? "results" : "start",
@@ -364,30 +520,21 @@ async function syncPanelStateForTab(tabId, tabUrl) {
     });
 }
 
-async function enablePanelForTab(tabId) {
-    try {
-        await chrome.sidePanel.setOptions({
-            tabId,
-            path: PANEL_PATH,
-            enabled: true
-        });
-        logInfo("Enabled side panel for tab", { tabId });
-    } catch (e) {
-        logError("Failed to enable side panel", { tabId, error: String(e) });
+async function syncPanelStateIfOpen(windowId, tabId, tabUrl, reason) {
+    if (!isSidePanelOpen(windowId)) {
+        return;
     }
-}
 
-async function closePanelForTab(tabId) {
     try {
-        if (chrome.sidePanel?.close) {
-            await chrome.sidePanel.close({ tabId });
-        } else {
-            await chrome.sidePanel.setOptions({ tabId, enabled: false });
-        }
-
-        logInfo("Closed side panel for tab", { tabId });
-    } catch (e) {
-        logError("Failed to close side panel", { tabId, error: String(e) });
+        await syncPanelStateForTab(windowId, tabId, tabUrl || "");
+    } catch (error) {
+        logError("Failed to synchronize open side panel", {
+            windowId,
+            tabId,
+            tabUrl: tabUrl || "",
+            reason,
+            error: String(error)
+        });
     }
 }
 
@@ -444,6 +591,45 @@ function invalidUrl(url) {
   return blockedPrefixes.some(prefix => url.startsWith(prefix));
 }
 
+function getOpenAIErrorMessage({ status, detail = "", code = "", model = "" }) {
+    const normalizedDetail = String(detail || "").trim();
+    const normalizedCode = String(code || "").trim();
+
+    if (status === 401) {
+        return "OpenAI rejected the saved API key. Update it in Settings and try again.";
+    }
+
+    if (status === 403) {
+        return model
+            ? `This OpenAI API key does not have permission to use the model "${model}".`
+            : "This OpenAI API key does not have permission to complete this request.";
+    }
+
+    if (status === 404) {
+        return model
+            ? `The model "${model}" could not be found for this account. Choose another model in Settings.`
+            : "The requested OpenAI resource could not be found.";
+    }
+
+    if (status === 429) {
+        if (normalizedCode === "insufficient_quota" || /insufficient_quota|quota/i.test(normalizedDetail)) {
+            return "OpenAI reports that this account is out of quota. Check billing or use a different API key.";
+        }
+
+        return "OpenAI rate-limited this request. Wait a moment and try again.";
+    }
+
+    if (status >= 500) {
+        return "OpenAI is temporarily unavailable. Try again in a moment.";
+    }
+
+    if (normalizedDetail) {
+        return normalizedDetail;
+    }
+
+    return `OpenAI request failed with status ${status}.`;
+}
+
 // ========== LLM CALL ==========
 async function callBiasModel({ apiKey, model, articleTitle, articleUrl, articleSource, articleText }) {
     const endpoint = "https://api.openai.com/v1/chat/completions";
@@ -466,7 +652,7 @@ You are a media analysis assistant. Read the article and return JSON in this exa
   "source_analysis": {
     "leaning": "Left|Center-left|Center|Center-right|Right|Mixed|Unknown",
     "confidence": "High|Medium|Low",
-        "credibility": "High|Medium|Low|Unknown"
+    "credibility": "High|Medium|Low|Unknown"
   }
 }
 
@@ -487,14 +673,12 @@ Examples:
 - Loaded: "heroic stand" — praises one side or actor emotionally.
     `.trim();
 
-    const trimmedArticleText = trimArticleTextForModel(articleText);
-
     const user = `
 Title: ${articleTitle || "Unknown"}
 URL: ${articleUrl || "Unknown"}
 Source: ${articleSource || "Unknown"}
 Article:
-${trimmedArticleText}
+${articleText}
     `.trim();
 
     const body = {
@@ -506,18 +690,51 @@ ${trimmedArticleText}
         temperature: 0.4
     };
 
-    const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OPENAI_REQUEST_TIMEOUT_MS);
+
+    let res;
+    try {
+        res = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+    } catch (error) {
+        if (error?.name === "AbortError") {
+            throw new Error("OpenAI took too long to respond. Try again in a moment.");
+        }
+
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error("OpenAI error: " + res.status + " " + txt);
+        let detail = "";
+        let code = "";
+
+        try {
+            const errorData = await res.json();
+            detail = errorData?.error?.message || "";
+            code = errorData?.error?.code || "";
+        } catch {
+            detail = await res.text().catch(() => "");
+        }
+
+        const error = new Error(getOpenAIErrorMessage({
+            status: res.status,
+            detail,
+            code,
+            model
+        }));
+        error.openAIStatus = res.status;
+        error.openAICode = code;
+        throw error;
     }
 
     const data = await res.json();
@@ -561,242 +778,431 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
     }
 
-    // 0. Panel asks if API key exists.
-    if (msg.type === "SUBTEXT_CHECK_API_KEY") {
-        logInfo("Received API key status check request");
-        getApiSettings(hasKey => {
-            sendToPanel({
-                type: "SUBTEXT_HAS_API_KEY",
-                payload: { hasKey }
-            });
-        });
-        return;
-    }
-
-    // 1. If panel is ready, then request article preview.
-    if (msg.type === "SUBTEXT_PANEL_READY") {
-        logInfo("Side panel reported ready");
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-            const tab = tabs?.[0];
-            if (tab?.id) await syncPanelStateForTab(tab.id, tab.url);
-        });
-        return;
-    }
-
-    // 2. If panel clicked "Analyze", then request article.
-    if (msg.type === "SUBTEXT_START_ANALYSIS") {
-        logInfo("Analysis requested from side panel");
-        getApiSettings((hasKey, apiKey, model) => {
-            if (!hasKey) {
-                logInfo("Analysis blocked because API key is missing");
-                sendToPanel({
-                    type: "SUBTEXT_HAS_API_KEY",
-                    payload: { hasKey: false }
-                });
-                sendAnalysisError("missing-api-key", "Add your OpenAI API key in Settings to analyze this article.");
-                openOptionsPage();
-                return;
+    if (msg.type === "SUBTEXT_CLEAR_ANALYSIS_CACHE") {
+        (async () => {
+            try {
+                const removedCount = await clearAnalysisCache();
+                logInfo("Cleared cached analysis data", { removedCount });
+                sendResponse({ ok: true, removedCount });
+            } catch (error) {
+                logError("Failed to clear analysis cache", { error: String(error) });
+                sendResponse({ ok: false, error: String(error) });
             }
-
-            // Ask current tab for article content.
-            chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
-                const tab = tabs[0];
-                if (!tab) {
-                    logError("No active tab found for analysis request");
-                    sendAnalysisError("no-active-tab", "Open an article tab and try again.");
-                    return;
-                }
-
-                const ok = await ensureContentScript(tab.id);
-                if (!ok) {
-                    logError("Analysis blocked because content script is unavailable", { tabId: tab.id });
-                    sendAnalysisError("content-script-unavailable", "Subtext could not access this page. Reload it and try again.");
-                    return;
-                }
-
-                logInfo("Requesting article content from active tab", { tabId: tab.id, model });
-                const result = await sendMessageToTab(tab.id, {
-                    type: "SUBTEXT_GET_ARTICLE"
-                });
-
-                if (!result.ok) {
-                    logError("Failed to request article content from tab", {
-                        tabId: tab.id,
-                        error: result.error || "Unknown error"
-                    });
-                    sendAnalysisError("article-request-failed", "Subtext could not read this article. Reload the page and try again.");
-                    return;
-                }
-                
-                const art = result.resp || {};
-                const articleTitle = art.title || "Untitled article";
-                const articleUrl = art.url || tab.url || "";
-                const articleSource = art.source || "";
-                const articleText = art.text || "";
-                const trimmedArticleText = trimArticleTextForModel(articleText);
-
-                if (!art.isArticle) {
-                    sendAnalysisError("not-an-article", art.detectionReason || "Subtext could not find a standalone article on this page.");
-                    return;
-                }
-
-                logInfo("Article data received for analysis", {
-                    title: articleTitle,
-                    source: articleSource || "Unknown",
-                    textLength: articleText.length,
-                    trimmedTextLength: trimmedArticleText.length,
-                    model,
-                    tabId: tab.id
-                });
-
-                let llmResult;
-
-                try {
-                    logInfo("Calling bias model", { model, articleTitle });
-                    llmResult = await callBiasModel({
-                        apiKey,
-                        model,
-                        articleTitle,
-                        articleUrl,
-                        articleSource,
-                        articleText: trimmedArticleText,
-                    });
-                    logInfo("Bias model returned result", {
-                        bulletCount: Array.isArray(llmResult.bullet_points) ? llmResult.bullet_points.length : 0,
-                        indicatorCount: Array.isArray(llmResult.indicators) ? llmResult.indicators.length : 0,
-                        tabId: tab.id
-                    });
-                } catch (err) {
-                    logError("LLM call failed", { error: String(err) });
-                    sendAnalysisError("analysis-failed", "Subtext could not complete the analysis. Try again in a moment.");
-                    return;
-                }
-
-                const annotations = buildHighlightAnnotations(llmResult.indicators || []);
-
-                let excerpt = art.excerpt || "";
-                let excerptHtml = "";
-
-                const highlightResult = await sendMessageToTab(tab.id, {
-                    type: "APPLY_HIGHLIGHTS",
-                    annotations
-                });
-
-                if (highlightResult.ok && highlightResult.resp) {
-                    excerpt = highlightResult.resp.excerpt || excerpt;
-                    excerptHtml = highlightResult.resp.excerptHtml || "";
-                } else if (!highlightResult.ok) {
-                    logError("Failed to apply highlights", {
-                        tabId: tab.id,
-                        error: highlightResult.error || "Unknown error"
-                    });
-                }
-
-                const payload = buildResultPayload({
-                    art,
-                    llmResult,
-                    excerpt,
-                    excerptHtml
-                });
-
-                await setCachedAnalysis(articleUrl, payload, art);
-
-                const activeTab = await getActiveTab();
-                if (!activeTab?.id) return;
-
-                const activeUrl = normalizeUrl(activeTab.url || "");
-                const resultUrl = normalizeUrl(articleUrl);
-
-                if (activeTab.id === tab.id && activeUrl === resultUrl) {
-                    sendToPanel({
-                        type: "SUBTEXT_RESULT",
-                        payload: {
-                            tabId: tab.id,
-                            result: payload
-                        }
-                    });
-                }
-            });
-        });
-        return;
+        })();
+        return true;
     }
 
-    if (msg.type === "SUBTEXT_OPEN_SETTINGS") {
-        logInfo("Open settings request received");
-        openOptionsPage();
-        return;
-    }
-
-    if (msg.type === "SUBTEXT_OPEN_CONTEXT") {
-        logInfo("Open context request received");
-        chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
-            const tab = tabs?.[0];
-            const articleUrl = tab?.url || "";
-            const article = articleUrl && !invalidUrl(articleUrl)
-                ? (await getCachedAnalysis(articleUrl)) || { url: articleUrl }
-                : {};
-
-            chrome.tabs.create({ url: buildContextPageUrl(article) });
-        });
-        return;
-    }
-
-    if (msg.type === "SUBTEXT_CLOSE_PANEL") {
-        chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
-            const tabId = tabs?.[0]?.id;
-            if (!tabId) {
-                logError("No active tab found for close panel request");
-                return;
-            }
-
-            await closePanelForTab(tabId);
-        });
-        return;
-    }
 });
 
 
 // ========== EVENT LISTENERS ==========
 chrome.runtime.onInstalled.addListener(async () => {
     await configureActionToOpenSidePanel();
-    logInfo("Extension installed; checking open tabs for content script injection");
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-        if (!tab.id || invalidUrl(tab.url)) continue;
-        await ensureContentScript(tab.id);
+    logInfo("Extension installed; content scripts will be injected on demand");
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== "subtext-sidepanel") {
+        return;
     }
+
+    let sessionWindowId = null;
+
+    logInfo("Side panel transport connected");
+
+    port.onMessage.addListener((msg) => {
+        if (msg.type === "SUBTEXT_PANEL_CONNECTED") {
+            const windowId = msg.payload?.windowId;
+            if (typeof windowId !== "number") {
+                logError("Side panel connection missing window id");
+                return;
+            }
+
+            sessionWindowId = windowId;
+            setPanelSession(windowId, { port });
+            logInfo("Side panel connected", { windowId });
+            return;
+        }
+
+        if (typeof sessionWindowId !== "number") {
+            logError("Ignoring side panel message before session initialization", {
+                type: msg?.type || "unknown"
+            });
+            return;
+        }
+
+        if (msg.type === "SUBTEXT_CHECK_API_CONFIGURATION") {
+            logInfo("Received API configuration status check request", { windowId: sessionWindowId });
+            getApiConfigurationStatus(({ hasKey, hasModel, hasValidConfiguration, model }) => {
+                postToPanel(sessionWindowId, {
+                    type: "SUBTEXT_API_CONFIGURATION_STATUS",
+                    payload: {
+                        hasKey,
+                        hasModel,
+                        hasValidConfiguration,
+                        model
+                    }
+                });
+            });
+            return;
+        }
+
+        if (msg.type === "SUBTEXT_PANEL_READY") {
+            logInfo("Side panel reported ready", { windowId: sessionWindowId });
+            (async () => {
+                const tab = await getActiveTabForWindow(sessionWindowId);
+                if (tab?.id) {
+                    await syncPanelStateForTab(sessionWindowId, tab.id, tab.url);
+                }
+            })().catch(error => {
+                logError("Failed to sync panel on ready", {
+                    windowId: sessionWindowId,
+                    error: String(error)
+                });
+            });
+            return;
+        }
+
+        if (msg.type === "SUBTEXT_START_ANALYSIS") {
+            logInfo("Analysis requested from side panel", {
+                windowId: sessionWindowId,
+                requestedTabId: msg.payload?.tabId ?? null,
+                requestedUrl: msg.payload?.url || ""
+            });
+
+            getApiConfigurationStatus(({ hasKey, hasModel, hasValidConfiguration, model }) => {
+                if (!hasValidConfiguration) {
+                    logInfo("Analysis blocked because API configuration is invalid", {
+                        windowId: sessionWindowId,
+                        hasKey,
+                        hasModel
+                    });
+                    postToPanel(sessionWindowId, {
+                        type: "SUBTEXT_API_CONFIGURATION_STATUS",
+                        payload: {
+                            hasKey,
+                            hasModel,
+                            hasValidConfiguration: false,
+                            model: model || ""
+                        }
+                    });
+                    sendAnalysisError(
+                        sessionWindowId,
+                        "invalid-api-configuration",
+                        "Save a valid OpenAI API key and model in Settings before analyzing this article."
+                    );
+                    openOptionsPage();
+                    return;
+                }
+
+                getApiSettings((hasSavedKey, apiKey, model) => {
+                    if (!hasSavedKey) {
+                        sendAnalysisError(sessionWindowId, "missing-api-key", "Add your OpenAI API key in Settings to analyze this article.");
+                        return;
+                    }
+
+                    (async () => {
+                        const requestedTabId = msg.payload?.tabId;
+                        const requestedUrl = normalizeUrl(msg.payload?.url || "");
+                        let tab = null;
+
+                        if (typeof requestedTabId === "number") {
+                            try {
+                                tab = await chrome.tabs.get(requestedTabId);
+                            } catch (error) {
+                                logError("Failed to resolve requested tab for analysis", {
+                                    windowId: sessionWindowId,
+                                    requestedTabId,
+                                    error: String(error)
+                                });
+                            }
+                        }
+
+                        if (!tab || tab.windowId !== sessionWindowId) {
+                            tab = await getActiveTabForWindow(sessionWindowId);
+                        }
+
+                        if (!tab?.id) {
+                            logError("No active tab found for analysis request", { windowId: sessionWindowId });
+                            sendAnalysisError(sessionWindowId, "no-active-tab", "Open an article tab and try again.");
+                            return;
+                        }
+
+                        const normalizedTabUrl = normalizeUrl(tab.url || "");
+                        if (requestedUrl && normalizedTabUrl && requestedUrl !== normalizedTabUrl) {
+                            logInfo("Analysis request context changed before run started", {
+                                windowId: sessionWindowId,
+                                requestedUrl,
+                                tabUrl: normalizedTabUrl,
+                                tabId: tab.id
+                            });
+                        }
+
+                        const ok = await ensureContentScript(tab.id);
+                        if (!ok) {
+                            logError("Analysis blocked because content script is unavailable", {
+                                windowId: sessionWindowId,
+                                tabId: tab.id
+                            });
+                            sendAnalysisError(sessionWindowId, "content-script-unavailable", "Subtext could not access this page. Reload it and try again.");
+                            return;
+                        }
+
+                        logInfo("Requesting article content from tab", {
+                            windowId: sessionWindowId,
+                            tabId: tab.id,
+                            model
+                        });
+
+                        const result = await sendMessageToTab(tab.id, {
+                            type: "SUBTEXT_GET_ARTICLE"
+                        });
+
+                        if (!result.ok) {
+                            logError("Failed to request article content from tab", {
+                                windowId: sessionWindowId,
+                                tabId: tab.id,
+                                error: result.error || "Unknown error"
+                            });
+                            sendAnalysisError(sessionWindowId, "article-request-failed", "Subtext could not read this article. Reload the page and try again.");
+                            return;
+                        }
+
+                        const art = result.resp || {};
+                        const articleTitle = art.title || "Untitled article";
+                        const articleUrl = art.url || tab.url || "";
+                        const articleSource = art.source || "";
+                        const articleText = art.text || "";
+                        const trimmedArticleText = trimArticleTextForModel(articleText);
+
+                        if (!art.isArticle) {
+                            sendAnalysisError(sessionWindowId, "not-an-article", art.detectionReason || "Subtext could not find a standalone article on this page.");
+                            return;
+                        }
+
+                        const session = updatePanelSession(sessionWindowId, {
+                            currentTabId: tab.id,
+                            currentUrl: articleUrl,
+                            currentRunId: (getPanelSession(sessionWindowId)?.currentRunId || 0) + 1
+                        });
+                        const runId = session?.currentRunId || 0;
+
+                        logInfo("Article data received for analysis", {
+                            windowId: sessionWindowId,
+                            title: articleTitle,
+                            source: articleSource || "Unknown",
+                            textLength: articleText.length,
+                            trimmedTextLength: trimmedArticleText.length,
+                            model,
+                            tabId: tab.id,
+                            runId
+                        });
+
+                        let llmResult;
+
+                        try {
+                            logInfo("Calling bias model", {
+                                windowId: sessionWindowId,
+                                model,
+                                articleTitle,
+                                runId
+                            });
+                            llmResult = await callBiasModel({
+                                apiKey,
+                                model,
+                                articleTitle,
+                                articleUrl,
+                                articleSource,
+                                articleText: trimmedArticleText,
+                            });
+                            logInfo("Bias model returned result", {
+                                windowId: sessionWindowId,
+                                bulletCount: Array.isArray(llmResult.bullet_points) ? llmResult.bullet_points.length : 0,
+                                indicatorCount: Array.isArray(llmResult.indicators) ? llmResult.indicators.length : 0,
+                                tabId: tab.id,
+                                runId
+                            });
+                        } catch (err) {
+                            if (shouldInvalidateStoredApiConfiguration({
+                                status: err?.openAIStatus,
+                                code: err?.openAICode
+                            })) {
+                                try {
+                                    await markStoredApiConfigurationInvalid();
+                                    const nextStatus = await new Promise(resolve => {
+                                        getApiConfigurationStatus(resolve);
+                                    });
+
+                                    postToPanel(sessionWindowId, {
+                                        type: "SUBTEXT_API_CONFIGURATION_STATUS",
+                                        payload: nextStatus
+                                    });
+                                } catch (storageError) {
+                                    logError("Failed to invalidate stored API configuration", {
+                                        windowId: sessionWindowId,
+                                        error: String(storageError)
+                                    });
+                                }
+                            }
+
+                            logError("LLM call failed", {
+                                windowId: sessionWindowId,
+                                runId,
+                                error: String(err)
+                            });
+                            sendAnalysisError(sessionWindowId, "analysis-failed", err?.message || "Subtext could not complete the analysis. Try again in a moment.");
+                            return;
+                        }
+
+                        const annotations = buildHighlightAnnotations(llmResult.indicators || []);
+
+                        let excerpt = art.excerpt || "";
+                        let excerptHtml = "";
+
+                        const highlightResult = await sendMessageToTab(tab.id, {
+                            type: "APPLY_HIGHLIGHTS",
+                            annotations
+                        });
+
+                        if (highlightResult.ok && highlightResult.resp) {
+                            excerpt = highlightResult.resp.excerpt || excerpt;
+                            excerptHtml = highlightResult.resp.excerptHtml || "";
+                        } else if (!highlightResult.ok) {
+                            logError("Failed to apply highlights", {
+                                windowId: sessionWindowId,
+                                tabId: tab.id,
+                                error: highlightResult.error || "Unknown error",
+                                runId
+                            });
+                        }
+
+                        const payload = buildResultPayload({
+                            art,
+                            llmResult,
+                            excerpt,
+                            excerptHtml
+                        });
+
+                        await setCachedAnalysis(articleUrl, payload, art);
+
+                        const latestSession = getPanelSession(sessionWindowId);
+                        const resultUrl = normalizeUrl(articleUrl);
+
+                        if (!latestSession) {
+                            logInfo("Discarding analysis result because panel session no longer exists", {
+                                windowId: sessionWindowId,
+                                tabId: tab.id,
+                                runId
+                            });
+                            return;
+                        }
+
+                        if (latestSession.currentRunId !== runId) {
+                            logInfo("Discarding stale analysis result for newer run", {
+                                windowId: sessionWindowId,
+                                tabId: tab.id,
+                                runId,
+                                latestRunId: latestSession.currentRunId
+                            });
+                            return;
+                        }
+
+                        if (latestSession.currentTabId !== tab.id || normalizeUrl(latestSession.currentUrl || "") !== resultUrl) {
+                            logInfo("Discarding stale analysis result for changed panel context", {
+                                windowId: sessionWindowId,
+                                tabId: tab.id,
+                                runId,
+                                sessionTabId: latestSession.currentTabId,
+                                sessionUrl: latestSession.currentUrl || ""
+                            });
+                            return;
+                        }
+
+                        postToPanel(sessionWindowId, {
+                            type: "SUBTEXT_RESULT",
+                            payload: {
+                                windowId: sessionWindowId,
+                                tabId: tab.id,
+                                result: payload
+                            }
+                        });
+                    })().catch(error => {
+                        logError("Analysis orchestration failed", {
+                            windowId: sessionWindowId,
+                            error: String(error)
+                        });
+                        sendAnalysisError(sessionWindowId, "analysis-failed", "Subtext could not complete the analysis. Try again in a moment.");
+                    });
+                });
+            });
+            return;
+        }
+
+        if (msg.type === "SUBTEXT_OPEN_SETTINGS") {
+            logInfo("Open settings request received", { windowId: sessionWindowId });
+            openOptionsPage();
+            return;
+        }
+
+        if (msg.type === "SUBTEXT_OPEN_CONTEXT") {
+            logInfo("Open context request received", { windowId: sessionWindowId });
+            (async () => {
+                const session = getPanelSession(sessionWindowId);
+                const activeTab = await getActiveTabForWindow(sessionWindowId);
+                const articleUrl = normalizeUrl(session?.currentUrl || activeTab?.url || "");
+                const article = articleUrl && !invalidUrl(articleUrl)
+                    ? (await getCachedAnalysis(articleUrl)) || {
+                        url: articleUrl,
+                        title: activeTab?.title || "",
+                        source: ""
+                    }
+                    : {};
+
+                chrome.tabs.create({ url: buildContextPageUrl(article) });
+            })().catch(error => {
+                logError("Failed to open context page", {
+                    windowId: sessionWindowId,
+                    error: String(error)
+                });
+            });
+        }
+    });
+
+    port.onDisconnect.addListener(() => {
+        if (typeof sessionWindowId === "number") {
+            clearPanelSession(sessionWindowId, port);
+            logInfo("Side panel disconnected", { windowId: sessionWindowId });
+        }
+    });
 });
 
 chrome.runtime.onStartup?.addListener(async () => {
     await configureActionToOpenSidePanel();
 });
 
+// Also run immediately on script evaluation to cover service worker restarts,
+// which do not reliably fire onInstalled or onStartup.
 configureActionToOpenSidePanel();
 
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-    const tab = await chrome.tabs.get(tabId);
-    logInfo("Active tab changed", { tabId, url: tab?.url || "" });
-
-    if (!tab?.url || invalidUrl(tab.url)) {
-        await syncPanelStateForTab(tabId, tab?.url || "");
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+    if (!isSidePanelOpen(windowId)) {
         return;
     }
 
-    enablePanelForTab(tabId);
-    await syncPanelStateForTab(tabId, tab.url);
+    const tab = await chrome.tabs.get(tabId);
+
+    logInfo("Active tab changed while panel open", { tabId, url: tab?.url || "" });
+    await syncPanelStateIfOpen(tab.windowId, tabId, tab?.url || "", "tab-activated");
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
-    if (info.status !== "complete") return;
-    if (!tab?.active) return;
-
-    logInfo("Tab finished loading", { tabId, url: tab?.url || "" });
-
-    if (!tab?.url || invalidUrl(tab.url)) {
-        await syncPanelStateForTab(tabId, tab?.url || "");
+    if (!isSidePanelOpen(tab?.windowId)) {
         return;
     }
 
-    enablePanelForTab(tabId);
-    await syncPanelStateForTab(tabId, tab.url);
+    if (info.status !== "complete") return;
+    if (!tab?.active) return;
+
+    logInfo("Active tab finished loading while panel open", { tabId, url: tab?.url || "" });
+    await syncPanelStateIfOpen(tab.windowId, tabId, tab?.url || "", "tab-updated");
 });

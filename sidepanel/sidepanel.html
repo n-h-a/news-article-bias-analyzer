@@ -13,10 +13,7 @@
             <div class="panel-header-left">
                 <span class="panel-header-title">Subtext</span>
             </div>
-            <div class="panel-header-right">
-                <div class="panel-header-progress"></div>
-                <button id="btn-close-panel-header" class="panel-header-close-btn" title="Close">x</button>
-            </div>
+            <div class="panel-header-progress"></div>
         </header>
 
         <!-- STARTING PAGE -->
@@ -30,7 +27,7 @@
                 </div>
                 <h1 id="detected-top-title" class="detected-top-title">Article Detected</h1>
                 <p id="detected-top-text" class="detected-top-text">
-                Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary.
+                Subtext has detected a news article on this page. Click analyze to get an AI-generated summary and language cues.
                 </p>
             </div>
 
@@ -74,7 +71,7 @@
         </main>
 
         <!-- RESULTS PAGE -->
-        <main id="results-page" class="results-page page">
+        <div id="results-page" class="results-page page">
             <!-- article header -->
             <section class="article-header">
                 <h1 id="article-header-title" class="article-header-title"></h1>
@@ -108,7 +105,7 @@
 
             <!-- ai summary -->
             <section class="summary-section">
-                <h2 class="summary-section-title">AI SUMMARY OF FULL ARTICLE</h2>
+                <h2 class="summary-section-title">AI-GENERATED ARTICLE SUMMARY</h2>
                 <hr class="divider"/>
 
                 <div id="summary-section-loading" class="summary-section-loading">
@@ -151,7 +148,7 @@
 
             <!-- bias detection -->
             <section class="bias-section">
-                <h2 class="bias-section-title">BIAS DETECTION</h2>
+                <h2 class="bias-section-title">LANGUAGE SIGNALS</h2>
                 <hr class="divider"/>
 
                 <div id="bias-section-loading" class="loading-section">
@@ -160,7 +157,7 @@
                 </div>
 
                 <div id="bias-section-content" class="bias-section-content hidden">
-                    <h3 class="bias-section-subtitle">ARTICLE EXCERPT</h3>
+                    <h3 class="bias-section-subtitle">AI-HIGHLIGHTED EXCERPT</h3>
                     <div class="bias-section-excerpt-card">
                         <p id="bias-section-excerpt"></p>
                     </div>
@@ -183,7 +180,7 @@
 
             <!-- detected bias indicators -->
             <section class="bias-indicators-section">
-                <h3 class="bias-indicators-section-title">DETECTED BIAS INDICATORS</h3>
+                <h3 class="bias-indicators-section-title">DETECTED LANGUAGE SIGNALS</h3>
                 <hr class="divider"/>
 
                 <div id="bias-indicators-section-loading" class="loading-section">
@@ -198,12 +195,12 @@
 
             <!-- source analysis -->
             <section class="source-section">
-                <h3 class="source-section-title">SOURCE ANALYSIS</h3>
+                <h3 class="source-section-title">SOURCE PROFILE</h3>
                 <hr class="divider"/>
 
                 <div id="source-section-loading" class="loading-section">
                     <div class="loader"></div>
-                    <p class="loading-section-text">Checking source credibility...</p>
+                    <p class="loading-section-text">Estimating source profile...</p>
                 </div>
 
                 <div id="source-section-content" class="source-section-content hidden">
@@ -212,12 +209,15 @@
                         <span id="source-section-bias-pill" class="bias-pill"></span>
                     </div>
                     <div class="source-section-meta-row" style="margin-bottom: 5px;">
-                        <span id="source-section-credibility" class="source-section-meta">Credibility:</span>
+                        <span id="source-section-credibility" class="source-section-meta">Estimated credibility:</span>
                     </div>
                     <div class="source-section-meta-row">
                         <span id="source-section-confidence" class="source-section-meta">Confidence:</span>
                         <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
                     </div>
+                    <p class="source-section-meta source-section-meta-disclaimer">
+                        AI-generated source profiles are heuristic signals, not factual ratings. Verify with independent reporting.
+                    </p>
                 </div>
             </section>
 
@@ -239,7 +239,7 @@
                     </button>
                 </div>
             </section>
-        </main>
+        </div>
         <script type="module" src="sidepanel.js"></script>
     </body>
 </html>

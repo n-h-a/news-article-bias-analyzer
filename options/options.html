@@ -2,23 +2,241 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Subtext Settings</title>
-        <style>label{display:block; margin:.5rem 0}</style>
+        <style>
+            :root {
+                color-scheme: light;
+                --bg: #f7f4ec;
+                --surface: rgba(255, 252, 245, 0.96);
+                --surface-strong: #fffdf8;
+                --text: #1d2a33;
+                --muted: #5c6a73;
+                --border: rgba(29, 42, 51, 0.12);
+                --accent: #0f766e;
+                --accent-strong: #115e59;
+                --danger: #b42318;
+                --shadow: 0 18px 44px rgba(24, 39, 49, 0.12);
+            }
+
+            * { box-sizing: border-box; }
+
+            body {
+                margin: 0;
+                font-family: Arial, Helvetica, sans-serif;
+                color: var(--text);
+                background:
+                    radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 28%),
+                    linear-gradient(180deg, #fbf8f1 0%, var(--bg) 100%);
+            }
+
+            main {
+                max-width: 860px;
+                margin: 0 auto;
+                padding: 40px 20px 56px;
+            }
+
+            .hero,
+            .card {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 24px;
+                box-shadow: var(--shadow);
+                backdrop-filter: blur(10px);
+            }
+
+            .hero {
+                padding: 28px;
+                margin-bottom: 18px;
+            }
+
+            .eyebrow {
+                margin: 0 0 10px;
+                font-size: 0.78rem;
+                font-weight: 700;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: var(--accent-strong);
+            }
+
+            h1 {
+                margin: 0 0 12px;
+                font: 500 clamp(2rem, 5vw, 3.2rem)/0.98 Georgia, "Times New Roman", serif;
+            }
+
+            .summary {
+                margin: 0;
+                max-width: 62ch;
+                color: var(--muted);
+                line-height: 1.6;
+            }
+
+            .grid {
+                display: grid;
+                gap: 18px;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            }
+
+            .card {
+                padding: 22px;
+            }
+
+            h2 {
+                margin: 0 0 14px;
+                font: 500 1.35rem/1.15 Georgia, "Times New Roman", serif;
+            }
+
+            label {
+                display: block;
+                margin: 0 0 14px;
+                font-size: 0.92rem;
+                font-weight: 600;
+            }
+
+            input {
+                width: 100%;
+                margin-top: 6px;
+                padding: 12px 14px;
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                background: var(--surface-strong);
+                font: inherit;
+                color: var(--text);
+            }
+
+            .actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 6px;
+            }
+
+            button {
+                appearance: none;
+                border: 0;
+                border-radius: 999px;
+                padding: 11px 16px;
+                font: 600 0.94rem/1.2 Arial, Helvetica, sans-serif;
+                cursor: pointer;
+            }
+
+            .primary {
+                background: var(--accent);
+                color: #f8fbfa;
+            }
+
+            .secondary {
+                background: rgba(15, 118, 110, 0.12);
+                color: var(--accent-strong);
+            }
+
+            .danger {
+                background: rgba(180, 35, 24, 0.12);
+                color: var(--danger);
+            }
+
+            .status {
+                min-height: 1.4rem;
+                margin: 12px 0 0;
+                color: var(--muted);
+                line-height: 1.5;
+            }
+
+            .list {
+                margin: 0;
+                padding-left: 18px;
+                color: var(--muted);
+                line-height: 1.6;
+            }
+
+            .list li + li {
+                margin-top: 8px;
+            }
+
+            .small {
+                margin: 12px 0 0;
+                color: var(--muted);
+                font-size: 0.92rem;
+                line-height: 1.55;
+            }
+
+            .meta {
+                margin-top: 12px;
+                font-size: 0.9rem;
+                color: var(--muted);
+            }
+
+            code {
+                font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+                font-size: 0.95em;
+            }
+
+            @media (max-width: 640px) {
+                main {
+                    padding: 24px 14px 40px;
+                }
+
+                .hero,
+                .card {
+                    border-radius: 20px;
+                }
+
+                .hero {
+                    padding: 22px;
+                }
+
+                .card {
+                    padding: 18px;
+                }
+            }
+        </style>
     </head>
     <body>
-        <h1>Subtext Settings</h1>
-        <h2>API Key</h2>
-        <label>
-            OpenAI API key
-            <input id="apikey" type="password" placeholder="sk-..." style="width: 320px;">
-        </label>
-        <label>
-            Model
-            <input id="model" value="gpt-4o-mini">
-        </label>
-        <button id="save">Save</button>
-        <button id="forget">Forget key</button>
-        <p id="status"></p>
+        <main>
+            <section class="hero">
+                <p class="eyebrow">Subtext Settings</p>
+                <h1>Control how analysis data is handled.</h1>
+                <p class="summary">
+                    Subtext validates your saved API configuration with OpenAI in Settings and sends article text to OpenAI when you request an analysis. Your API key is stored in extension storage on this browser until you remove it.
+                </p>
+            </section>
+
+            <div class="grid">
+                <section class="card">
+                    <h2>API configuration</h2>
+                    <label>
+                        OpenAI API key
+                        <input id="apikey" type="password" placeholder="sk-...">
+                    </label>
+                    <label>
+                        Model
+                        <input id="model" value="gpt-4o-mini">
+                    </label>
+                    <div class="actions">
+                        <button id="save" class="primary">Save settings</button>
+                        <button id="forget" class="danger">Forget</button>
+                    </div>
+                    <p class="small">
+                        Subtext uses your API key directly from this extension. Your OpenAI account is billed for any analysis requests made with that key.
+                    </p>
+                </section>
+
+                <section class="card">
+                    <h2>Data handling</h2>
+                    <ul class="list">
+                        <li>Article title, URL, source, excerpt, and article text are processed to generate a summary and bias indicators.</li>
+                        <li>Cached analysis results are stored in session storage so the current browsing session can restore previous results.</li>
+                        <li>You can remove the stored API key and clear cached analysis data from this page.</li>
+                    </ul>
+                    <div class="actions">
+                        <button id="clear-cache" class="secondary">Clear cached analyses</button>
+                    </div>
+                    <p class="meta">Repository privacy policy: <code>PRIVACY.md</code></p>
+                </section>
+            </div>
+
+            <p id="status" class="status" aria-live="polite"></p>
+        </main>
         <script type="module" src="options.js"></script>
     </body>
 </html>

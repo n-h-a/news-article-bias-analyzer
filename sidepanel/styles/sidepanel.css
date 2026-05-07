@@ -25,31 +25,11 @@
     color: var(--color-gray-900, oklch(.21 .034 264.665));
 }
 
-.panel-header-right {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .panel-header-progress {
     width: 40px;
     height: 2px;
     background: var(--color-blue-600, oklch(.546 .245 262.881));
     border-radius: 9999px;
-    margin-right: 10px;
-}
-
-.panel-header-close-btn {
-    background: transparent;
-    border: none;
-    font-size: 0.9rem;
-    color: var(--color-gray-500, oklch(.551 .027 264.364));
-    cursor: pointer;
-    transition: color 0.1s ease-out;
-}
-
-.panel-header-close-btn:hover {
-    color: var(--color-gray-700, oklch(.373 .034 259.733));
 }
 
 /* === PAGES === */
@@ -680,6 +660,13 @@ font-size: 0.68rem;
 
 .source-section-meta--muted {
     text-align: right;
+}
+
+.source-section-meta-disclaimer {
+    font-size: 0.6rem;
+    margin: 0px;
+    color: var(--color-gray-400, oklch(.872 .01 258.338));
+    text-align: left;
 }
 
 .source-section-bottom-line {

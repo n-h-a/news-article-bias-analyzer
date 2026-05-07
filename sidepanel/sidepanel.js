@@ -2,6 +2,210 @@
 
 import Logger from '../logger.js';
 
+let panelPort = null;
+let panelWindowId = null;
+let reconnectTimerId = null;
+let hasValidApiConfiguration = false;
+let isCurrentPageArticle = false;
+let isAnalysisInProgress = false;
+
+function syncAnalyzeButtonState() {
+    if (!analyzeBtn) {
+        return;
+    }
+
+    analyzeBtn.disabled = isAnalysisInProgress || !isCurrentPageArticle || !hasValidApiConfiguration;
+}
+
+function handlePanelMessage(msg) {
+    if (msg.type === "SUBTEXT_PAGE_STATE") {
+        Logger.info("Received page state update", {
+            mode: msg.payload?.mode || "unknown",
+            tabId: msg.payload?.tabId ?? null,
+            hasResult: Boolean(msg.payload?.result)
+        });
+        applyPageState(msg.payload || {});
+    }
+
+    if (msg.type === "SUBTEXT_API_CONFIGURATION_STATUS") {
+        const hasKey = Boolean(msg.payload?.hasKey);
+        const hasModel = Boolean(msg.payload?.hasModel);
+        hasValidApiConfiguration = Boolean(msg.payload?.hasValidConfiguration);
+
+        Logger.info("Received API configuration status", {
+            hasKey,
+            hasModel,
+            hasValidApiConfiguration
+        });
+        setApiConfigurationWarningVisible(hasValidApiConfiguration);
+        syncAnalyzeButtonState();
+    }
+
+    if (msg.type === "SUBTEXT_ANALYSIS_ERROR") {
+        const message = msg.payload?.message || "Subtext could not analyze this page. Try again.";
+        Logger.error("Analysis error received", {
+            reason: msg.payload?.reason || "unknown",
+            message
+        });
+        recoverFromAnalysisError(message);
+    }
+
+    if (msg.type === "SUBTEXT_RESULT") {
+        const tabId = msg.payload?.tabId ?? null;
+        const res = msg.payload?.result || {};
+
+        if (!matchesCurrentContext(tabId, res.url || "")) {
+            Logger.info("Ignoring stale analysis result", {
+                tabId,
+                url: res.url || ""
+            });
+            return;
+        }
+
+        pendingResult = res;
+        analysisDone = true;
+
+        Logger.info("Analysis result received", {
+            bulletCount: Array.isArray(res.bulletPoints) ? res.bulletPoints.length : 0,
+            indicatorCount: Array.isArray(res.indicators) ? res.indicators.length : 0
+        });
+
+        maybeFinalizeRun(currentRunId);
+    }
+}
+
+function initializePanelSession() {
+    if (!panelPort || typeof panelWindowId !== "number") {
+        return;
+    }
+
+    try {
+        panelPort.postMessage({
+            type: "SUBTEXT_PANEL_CONNECTED",
+            payload: { windowId: panelWindowId }
+        });
+        panelPort.postMessage({ type: "SUBTEXT_CHECK_API_CONFIGURATION" });
+        panelPort.postMessage({ type: "SUBTEXT_PANEL_READY" });
+        Logger.info("Panel session initialized", { windowId: panelWindowId });
+    } catch (error) {
+        Logger.error("Failed to initialize panel session", {
+            windowId: panelWindowId,
+            error: String(error)
+        });
+    }
+}
+
+function schedulePanelReconnect() {
+    if (reconnectTimerId !== null) {
+        return;
+    }
+
+    reconnectTimerId = window.setTimeout(() => {
+        reconnectTimerId = null;
+        connectPanelPort();
+    }, 800);
+}
+
+function connectPanelPort() {
+    if (panelPort) {
+        return panelPort;
+    }
+
+    try {
+        panelPort = chrome.runtime.connect({ name: "subtext-sidepanel" });
+        panelPort.onMessage.addListener(handlePanelMessage);
+        panelPort.onDisconnect.addListener(() => {
+            const disconnectError = chrome.runtime.lastError?.message || "Port disconnected";
+            panelPort = null;
+            cancelPendingAnalysisRun();
+            isAnalysisInProgress = false;
+            syncAnalyzeButtonState();
+            showStartPage();
+            setStartPageStatus("Connection to the Subtext background service was interrupted. Reconnecting…", "warning");
+            Logger.error("Side panel port disconnected", { error: disconnectError });
+            schedulePanelReconnect();
+        });
+
+        initializePanelSession();
+    } catch (error) {
+        panelPort = null;
+        Logger.error("Failed to connect side panel port", { error: String(error) });
+        schedulePanelReconnect();
+    }
+
+    return panelPort;
+}
+
+function sendPanelMessage(message) {
+    const port = panelPort || connectPanelPort();
+    if (!port) {
+        Logger.error("Unable to send message because side panel port is unavailable", {
+            type: message?.type || "unknown"
+        });
+        return false;
+    }
+
+    try {
+        port.postMessage(message);
+        return true;
+    } catch (error) {
+        Logger.error("Failed to send side panel message", {
+            type: message?.type || "unknown",
+            error: String(error)
+        });
+        return false;
+    }
+}
+
+function openSettings() {
+    if (sendPanelMessage({ type: "SUBTEXT_OPEN_SETTINGS" })) {
+        return;
+    }
+
+    if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+        return;
+    }
+
+    chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html") });
+}
+
+async function refreshApiConfigurationFromStorage() {
+    try {
+        const stored = await chrome.storage.local.get([
+            'openai_api_key',
+            'openai_model',
+            'openai_api_config_valid',
+            'openai_api_config_validated_model'
+        ]);
+
+        const nextApiKey = String(stored.openai_api_key || '').trim();
+        const nextModel = String(stored.openai_model || '').trim();
+        const nextValidatedModel = String(stored.openai_api_config_validated_model || '').trim();
+        const nextIsValid = stored.openai_api_config_valid === true;
+
+        hasValidApiConfiguration = Boolean(
+            nextApiKey &&
+            nextModel &&
+            nextIsValid &&
+            nextValidatedModel === nextModel
+        );
+
+        setApiConfigurationWarningVisible(hasValidApiConfiguration);
+        syncAnalyzeButtonState();
+
+        Logger.info('Refreshed API configuration state from storage', {
+            hasKey: Boolean(nextApiKey),
+            hasModel: Boolean(nextModel),
+            hasValidApiConfiguration
+        });
+    } catch (error) {
+        Logger.error('Failed to refresh API configuration from storage', {
+            error: String(error)
+        });
+    }
+}
+
 
 // ========== PAGE ELEMENTS ==========
 const pageStart = document.getElementById("start-page");
@@ -54,14 +258,13 @@ const biasIndicatorsList = document.getElementById("bias-indicators-section-list
 const sourceNameEl = document.getElementById("source-section-name");
 const sourcePillEl = document.getElementById("source-section-bias-pill");
 const sourceCredEl = document.getElementById("source-section-credibility");
-const sourceConfEl = document.getElementById("source-section-confidence")
+const sourceConfEl = document.getElementById("source-section-confidence");
 const sourceProviderEl = document.getElementById("source-section-provider");
 
 // -- actions --
 const copyBtn = document.getElementById("btn-actions-section-copy-summary");
 const seeContextBtn = document.getElementById("btn-actions-section-see-context");
 const settingsBtn = document.getElementById("btn-actions-section-settings");
-const closeBtn = document.getElementById("btn-close-panel-header");
 
 // ========== PAGE TOGGLES ==========
 function showStartPage() {
@@ -104,15 +307,16 @@ function setStartPageStatus(message = "", tone = "info") {
     }
 }
 
-function setApiWarningVisible(hasKey) {
+function setApiConfigurationWarningVisible(hasValidConfiguration) {
     if (!apiWarningCard) return;
-    apiWarningCard.style.display = hasKey ? "none" : "block";
+    apiWarningCard.style.display = hasValidConfiguration ? "none" : "block";
 }
 
 function recoverFromAnalysisError(message) {
     cancelPendingAnalysisRun();
+    isAnalysisInProgress = false;
     showStartPage();
-    if (analyzeBtn) analyzeBtn.disabled = false;
+    syncAnalyzeButtonState();
     setStartPageStatus(message || "Subtext could not analyze this page. Try again.", "error");
     Logger.error("Recovered panel from analysis error", { message: message || "Unknown error" });
 }
@@ -131,12 +335,12 @@ let pendingResult = null;
 const LOADING_STEPS = [
     { label: "Reading article...", pct: 25 },
     { label: "Analyzing content...", pct: 50 },
-    { label: "Generating summary...", pct: 75} ,
+    { label: "Generating summary...", pct: 75 },
     { label: "Complete", pct: 100 }
 ];
 
 function cancelPendingAnalysisRun() {
-        // Bump the run id so any in-flight loading animation exits without finalizing stale results.
+    // Bump the run id so any in-flight loading animation exits without finalizing stale results.
     currentRunId++;
     minUiDone = false;
     analysisDone = false;
@@ -144,6 +348,8 @@ function cancelPendingAnalysisRun() {
 }
 
 function setLoadingVisible() {
+    isAnalysisInProgress = true;
+    syncAnalyzeButtonState();
     setSummaryProgress(0, "");
     setStartPageStatus("");
     
@@ -165,6 +371,7 @@ function setLoadingVisible() {
 }
 
 function setResultsVisible() {
+    isAnalysisInProgress = false;
     showResultsPage();
 
     if (summaryContent) summaryContent.classList.remove("hidden");
@@ -176,7 +383,7 @@ function setResultsVisible() {
     if (sourceContent) sourceContent.classList.remove("hidden");
     if (sourceLoading) sourceLoading.classList.add("hidden");
 
-    if (analyzeBtn) analyzeBtn.disabled = false;
+    syncAnalyzeButtonState();
     Logger.info('Show results page and elements');
 
 }
@@ -199,6 +406,7 @@ function renderDetectedPageState(data = {}) {
     const detectionConfidence = data.detectionConfidence || (data.isArticle ? "high" : "low");
     const isArticle = detectionConfidence !== "low";
     const isUncertainArticle = detectionConfidence === "medium";
+    isCurrentPageArticle = isArticle;
 
     if (detectedTopIconEl) {
         detectedTopIconEl.classList.remove(
@@ -223,7 +431,7 @@ function renderDetectedPageState(data = {}) {
         detectedTopTextEl.textContent = isArticle
             ? (isUncertainArticle
                 ? "This page might be a standalone article. You can analyze it, but the detection signal is weaker than usual."
-                : "Subtext has detected a news article on this page. Click analyze to get AI-powered bias detection and summary.")
+                : "Subtext has detected a news article on this page. Click analyze to get an AI-generated summary and language cues.")
             : "This page does not look like a standalone article yet. Open an article page to analyze it with Subtext.";
     }
 
@@ -234,9 +442,10 @@ function renderDetectedPageState(data = {}) {
     }
 
     if (analyzeBtn) {
-        analyzeBtn.disabled = !isArticle;
         analyzeBtn.textContent = "Analyze Article";
     }
+
+    syncAnalyzeButtonState();
 }
 
 function setCurrentContext(tabId, url) {
@@ -444,7 +653,7 @@ function renderBiasIndicators(indicators) {
 
     if (!Array.isArray(indicators) || !indicators.length) {
         const p = document.createElement("p");
-        p.textContent = "No explicit bias indicators found.";
+        p.textContent = "No strong language signals were found.";
         p.style.fontSize = "0.7rem";
         p.style.color = "rgba(15,23,42,0.6)";
         biasIndicatorsList.appendChild(p);
@@ -508,13 +717,13 @@ function renderSourceAnalysis(info) {
     }
 
     if (sourceCredEl) {
-        sourceCredEl.textContent = `Credibility: ${info.credibility || "Unknown"}`;
+        sourceCredEl.textContent = `Estimated credibility: ${info.credibility || "Unknown"}`;
     }
     if (sourceConfEl) {
         sourceConfEl.textContent = `Confidence: ${info.confidence || "Low"}`;
     }
     if (sourceProviderEl) {
-        sourceProviderEl.textContent = info.provider ? `via ${info.provider}` : "";
+        sourceProviderEl.textContent = info.provider ? `AI-generated via ${info.provider}` : "";
     }
 
     if (articlePillEl) {
@@ -549,7 +758,6 @@ function faviconURL(u) {
 // ========== BUTTON EVENTS ==========
 analyzeBtn?.addEventListener("click", async () => {
     Logger.info("Analyze button clicked");
-    analyzeBtn.disabled = true;
     setLoadingVisible();
 
     currentRunId++;
@@ -562,12 +770,23 @@ analyzeBtn?.addEventListener("click", async () => {
     runMinimumLoadingTimeline(runId);
     await nextFrame();
 
-    chrome.runtime.sendMessage({ type: "SUBTEXT_START_ANALYSIS" });
+    const didSend = sendPanelMessage({
+        type: "SUBTEXT_START_ANALYSIS",
+        payload: {
+            windowId: panelWindowId,
+            tabId: currentContext.tabId,
+            url: currentContext.url
+        }
+    });
+
+    if (!didSend) {
+        recoverFromAnalysisError("Subtext lost its connection to the background service. Try again in a moment.");
+    }
 });
 
 openSettingsBtn?.addEventListener("click", () => {
     Logger.info("Opening settings from warning card");
-    chrome.runtime.sendMessage({ type: "SUBTEXT_OPEN_SETTINGS" });
+    openSettings();
 });
 
 copyBtn?.addEventListener("click", async () => {
@@ -593,81 +812,52 @@ copyBtn?.addEventListener("click", async () => {
 
 seeContextBtn?.addEventListener("click", () => {
     Logger.info("Opening more context view");
-    chrome.runtime.sendMessage({ type: "SUBTEXT_OPEN_CONTEXT" });
+    sendPanelMessage({ type: "SUBTEXT_OPEN_CONTEXT" });
 });
 
 settingsBtn?.addEventListener("click", () => {
     Logger.info("Opening settings from actions");
-    chrome.runtime.sendMessage({ type: "SUBTEXT_OPEN_SETTINGS" });
+    openSettings();
 });
 
-closeBtn?.addEventListener("click", () => {
-    Logger.info("Close panel requested");
-    chrome.runtime.sendMessage({ type: "SUBTEXT_CLOSE_PANEL" });
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') {
+        return;
+    }
+
+    const affectsApiConfiguration = Boolean(
+        changes.openai_api_key ||
+        changes.openai_model ||
+        changes.openai_api_config_valid ||
+        changes.openai_api_config_validated_model
+    );
+
+    if (!affectsApiConfiguration) {
+        return;
+    }
+
+    void refreshApiConfigurationFromStorage();
 });
 
-// ========== MESSAGE HANDLER ==========
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === "SUBTEXT_PAGE_STATE") {
-        Logger.info("Received page state update", {
-            mode: msg.payload?.mode || "unknown",
-            tabId: msg.payload?.tabId ?? null,
-            hasResult: Boolean(msg.payload?.result)
-        });
-        applyPageState(msg.payload || {});
-    }
+Logger.info("Side panel initialized");
 
-    if (msg.type === "SUBTEXT_HAS_API_KEY") {
-        Logger.info("Received API key status", { hasKey: Boolean(msg.payload?.hasKey) });
-        setApiWarningVisible(Boolean(msg.payload?.hasKey));
-    }
+(async () => {
+    try {
+        const currentWindow = await chrome.windows.getCurrent();
+        panelWindowId = currentWindow?.id ?? null;
 
-    if (msg.type === "SUBTEXT_ANALYSIS_ERROR") {
-        const message = msg.payload?.message || "Subtext could not analyze this page. Try again.";
-        Logger.error("Analysis error received", {
-            reason: msg.payload?.reason || "unknown",
-            message
-        });
-        recoverFromAnalysisError(message);
-    }
-
-    if (msg.type === "SUBTEXT_RESULT") {
-        const tabId = msg.payload?.tabId ?? null;
-        const res = msg.payload?.result || {};
-
-        if (!matchesCurrentContext(tabId, res.url || "")) {
-            Logger.info("Ignoring stale analysis result", {
-                tabId,
-                url: res.url || ""
+        if (typeof panelWindowId !== "number") {
+            Logger.error("Failed to initialize side panel session", {
+                reason: "missing-window-id"
             });
             return;
         }
 
-        pendingResult = res;
-        analysisDone = true;
-
-        Logger.info("Analysis result received", {
-            bulletCount: Array.isArray(res.bulletPoints) ? res.bulletPoints.length : 0,
-            indicatorCount: Array.isArray(res.indicators) ? res.indicators.length : 0
+        connectPanelPort();
+    } catch (error) {
+        Logger.error("Failed to initialize side panel session", {
+            error: String(error)
         });
-
-        maybeFinalizeRun(currentRunId);
     }
-});
-
-chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !changes.openai_api_key) {
-        return;
-    }
-
-    const nextValue = (changes.openai_api_key.newValue || '').trim();
-    setApiWarningVisible(Boolean(nextValue));
-    Logger.info('Updated API warning card from storage change', {
-        hasKey: Boolean(nextValue)
-    });
-});
-
-Logger.info("Side panel initialized");
-chrome.runtime.sendMessage({ type: "SUBTEXT_CHECK_API_KEY" });
-chrome.runtime.sendMessage({ type: "SUBTEXT_PANEL_READY" });
+})();
 

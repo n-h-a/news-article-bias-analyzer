@@ -3,31 +3,33 @@
     "name": "Subtext",
     "version": "1.0.0",
     "description": "Chrome extension that helps decode media, providing additional context on web pages to help promote media literacy",
+    "icons": {
+        "16": "icons/source.png",
+        "32": "icons/source.png",
+        "48": "icons/source.png",
+        "128": "icons/source.png"
+    },
     "permissions": [
         "sidePanel",
-        "activeTab",
         "scripting",
         "storage",
         "favicon"
     ],
-    "host_permissions": ["<all_urls>"],
+    "host_permissions": ["http://*/*", "https://*/*"],
     "background": {
         "service_worker": "background.js"
     },
     "action": {
-        "default_title": "Open Subtext"
-    },
-    "content_scripts": [
-        {
-            "matches": ["<all_urls>"],
-            "js": ["vendor/Readability.js", "content_script.js"],
-            "run_at": "document_idle"
+        "default_title": "Open Subtext",
+        "default_icon": {
+            "16": "icons/source.png",
+            "32": "icons/source.png"
         }
-    ],
+    },
     "web_accessible_resources": [
         {
             "resources": ["_favicon/*"],
-            "matches": ["<all_urls>"],
+            "matches": ["http://*/*", "https://*/*"],
             "use_dynamic_url": true
         }
     ],
