@@ -6,10 +6,28 @@ const ANALYSIS_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const ANALYSIS_CACHE_MAX_ENTRIES = 40;
 const ANALYSIS_REQUEST_TIMEOUT_MS = 45000;
 
+// Key used to persist the anonymous device UUID in chrome.storage.local.
+// The UUID is generated once on first use and reused across sessions.
+const DEVICE_ID_KEY = "subtext_device_id";
+
 const IS_DEV = !("update_url" in chrome.runtime.getManifest());
 const BACKEND_API_URL = IS_DEV
     ? "http://localhost:3000/analyze"
     : "https://subtext-api-production-82b5.up.railway.app/analyze";
+
+// ========== DEVICE ID ==========
+
+// Returns the stored anonymous device UUID, creating and persisting one if
+// this is the first time the extension has been used on this device.
+// Uses crypto.randomUUID() which is available natively in MV3 service workers.
+async function getOrCreateDeviceId() {
+    const stored = await chrome.storage.local.get(DEVICE_ID_KEY);
+    if (stored[DEVICE_ID_KEY]) return stored[DEVICE_ID_KEY];
+
+    const id = crypto.randomUUID();
+    await chrome.storage.local.set({ [DEVICE_ID_KEY]: id });
+    return id;
+}
 
 const panelSessions = new Map();
 
@@ -550,11 +568,23 @@ async function callBackendAnalyze({ articleTitle, articleUrl, articleSource, art
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_REQUEST_TIMEOUT_MS);
 
+    // Retrieve (or generate) the anonymous device UUID for the usage counter.
+    // Non-fatal: if storage fails we proceed without a device ID.
+    let deviceId = null;
+    try {
+        deviceId = await getOrCreateDeviceId();
+    } catch {
+        logError("Failed to retrieve device ID; proceeding without it");
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (deviceId) headers["X-Device-ID"] = deviceId;
+
     let res;
     try {
         res = await fetch(BACKEND_API_URL, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ articleTitle, articleUrl, articleSource, articleText }),
             signal: controller.signal
         });
