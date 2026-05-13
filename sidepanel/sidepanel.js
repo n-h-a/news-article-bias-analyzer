@@ -606,10 +606,7 @@ function renderBiasIndicators(indicators) {
         
         const card = document.createElement("article");
         card.className = "bias-indicators-section-card";
-        const bias = (item.bias || "loaded").toLowerCase();
-        if (bias === "left") card.classList.add("bias-indicators-section-card--left");
-        else if (bias === "right") card.classList.add("bias-indicators-section-card--right");
-        else card.classList.add("bias-indicators-section-card--loaded");
+        card.classList.add("bias-indicators-section-card--loaded");
 
         const phrase = document.createElement("p");
         phrase.className = "bias-indicators-section-card-phrase";
@@ -628,7 +625,6 @@ function renderBiasIndicators(indicators) {
 function resetBiasPill(pillEl) {
     if (!pillEl) return;
 
-    pillEl.classList.remove("bias-pill--left", "bias-pill--right");
     pillEl.style.background = "";
     pillEl.style.color = "";
 }
@@ -640,21 +636,9 @@ function renderSourceAnalysis(info) {
     if (sourcePillEl) {
         resetBiasPill(sourcePillEl);
 
-        if (info.bias) {
-            sourcePillEl.textContent = info.bias;
-
-            const lower = info.bias.toLowerCase();
-            if (lower.includes("left")) {
-                sourcePillEl.classList.add("bias-pill--left");
-            } else if (lower.includes("right")) {
-                sourcePillEl.classList.add("bias-pill--right");
-            } else {
-                sourcePillEl.style.background = "var(--color-gray-100, #eef2f7)";
-                sourcePillEl.style.color = "var(--color-gray-700, #334155)";
-            }
-        } else {
-            sourcePillEl.textContent = "Unknown";
-        }
+        sourcePillEl.textContent = info.bias || "Unknown";
+        sourcePillEl.style.background = "var(--color-gray-100, #eef2f7)";
+        sourcePillEl.style.color = "var(--color-gray-700, #334155)";
     }
 
     if (sourceCredEl) {
@@ -670,21 +654,9 @@ function renderSourceAnalysis(info) {
     if (articlePillEl) {
         resetBiasPill(articlePillEl);
 
-        if (info.bias) {
-            articlePillEl.textContent = info.bias;
-
-            const lower = info.bias.toLowerCase();
-            if (lower.includes("left")) {
-                articlePillEl.classList.add("bias-pill--left");
-            } else if (lower.includes("right")) {
-                articlePillEl.classList.add("bias-pill--right");
-            } else {
-                articlePillEl.style.background = "var(--color-gray-400, oklch(.707 .022 261.325))";
-                articlePillEl.style.color = "#fff";
-            }
-        } else {
-            articlePillEl.textContent = "Unknown";
-        }
+        articlePillEl.textContent = info.bias || "Unknown";
+        articlePillEl.style.background = "var(--color-gray-400, oklch(.707 .022 261.325))";
+        articlePillEl.style.color = "#fff";
     }
 }
 

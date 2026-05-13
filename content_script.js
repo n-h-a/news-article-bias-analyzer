@@ -156,8 +156,6 @@ function injectBiasStylesOnce() {
             --bias-tooltip-shift: 0px; 
             --bias-gap: 10px;
         }
-        .bias-left   { color: #1b398e; text-decoration-color: #2c7eff; }   /* blue */
-        .bias-right  { color: #821819; text-decoration-color: #fb2c37; }   /* red  */
         .bias-loaded { color: #7a3306; text-decoration-color: #fe9a00; }   /* goldenrod */
 
         /* Tooltip */
@@ -192,11 +190,7 @@ function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function categoryClass(cat) {
-    if (!cat) return "bias-loaded";
-    const c = cat.toLowerCase();
-    if (c === "left") return "bias-left";
-    if (c === "right") return "bias-right";
+function categoryClass(_cat) {
     return "bias-loaded";
 }
 
