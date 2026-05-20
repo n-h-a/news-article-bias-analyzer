@@ -27,7 +27,7 @@
                 </div>
                 <h1 id="detected-top-title" class="detected-top-title">Article Detected</h1>
                 <p id="detected-top-text" class="detected-top-text">
-                Subtext has detected a news article on this page. Click analyze to get an AI-generated summary and language cues.
+                    Subtext has detected a news article. Analyze to get a plain-language summary, see loaded language signals, and find fact-checks and more context.
                 </p>
             </div>
 
@@ -65,7 +65,6 @@
                 <h1 id="article-header-title" class="article-header-title"></h1>
                 <div class="article-header-meta">
                     <span id="article-header-source" class="article-header-source"></span>
-                    <span id="article-header-bias-pill" class="bias-pill"></span>
                 </div>
                 <a
                 id="article-header-link"
@@ -165,7 +164,7 @@
 
                 <div id="bias-indicators-section-loading" class="loading-section">
                     <div class="loader"></div>
-                    <p class="loading-section-text">Detecting bias indicators...</p>
+                    <p class="loading-section-text">Detecting language signals...</p>
                 </div>
 
                 <div id="bias-indicators-section-content" class="bias-indicators-section-content hidden">
@@ -180,33 +179,35 @@
 
                 <div id="source-section-loading" class="loading-section">
                     <div class="loader"></div>
-                    <p class="loading-section-text">Estimating source profile...</p>
+                    <p class="loading-section-text">Identifying source...</p>
                 </div>
 
                 <div id="source-section-content" class="source-section-content hidden">
                     <div class="source-section-row">
                         <span id="source-section-name" class="source-section-name"></span>
-                        <span id="source-section-bias-pill" class="bias-pill"></span>
-                    </div>
-                    <div class="source-section-meta-row" style="margin-bottom: 5px;">
-                        <span id="source-section-credibility" class="source-section-meta">Estimated credibility:</span>
-                    </div>
-                    <div class="source-section-meta-row">
-                        <span id="source-section-confidence" class="source-section-meta">Confidence:</span>
-                        <span id="source-section-provider" class="source-section-meta source-section-meta--muted">via ...</span>
                     </div>
                     <p class="source-section-meta source-section-meta-disclaimer">
-                        AI-generated source profiles are heuristic signals, not factual ratings. Verify with independent reporting.
+                        AI outlet ratings are unreliable. Look it up independently:
                     </p>
+                    <a id="source-section-lookup-link" class="source-section-lookup-link" href="#" target="_blank" rel="noopener noreferrer">Look up this outlet on AllSides →</a>
                 </div>
+            </section>
+
+            <!-- inline context links (toggled by See More Context) -->
+            <section id="context-links-section" class="context-links-section hidden">
+                <div id="context-links-list" class="context-links-list"></div>
+                <a id="context-links-full-view" class="context-links-full-view" href="#" target="_blank" rel="noopener noreferrer">Open full research view ↗</a>
             </section>
 
             <!-- actions -->
             <section class="actions-section">
-                <h3 class="actions-section-title">ACTIONS</h3>
+                <h3 class="actions-section-title">GO FURTHER</h3>
                 <button id="btn-actions-section-see-context" class="actions-section-primary">
                     <span class="actions-section-action-icon" aria-hidden="true">↗</span>
-                    <span>See More Context</span>
+                    <span class="actions-section-primary-content">
+                        <span class="actions-section-primary-label">See More Context</span>
+                        <span class="actions-section-primary-desc">Fact-checks, coverage &amp; source research</span>
+                    </span>
                 </button>
                 <div class="actions-section-row">
                     <button id="btn-actions-section-copy-summary" class="actions-section-secondary">

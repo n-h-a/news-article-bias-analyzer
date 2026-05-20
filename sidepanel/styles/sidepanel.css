@@ -653,6 +653,14 @@ font-size: 0.68rem;
     text-align: left;
 }
 
+.source-section-lookup-link {
+    display: inline-block;
+    font-size: 0.72rem;
+    color: var(--color-gray-600, oklch(.446 .03 256.802));
+    margin-top: 4px;
+    text-decoration: underline;
+}
+
 .source-section-bottom-line {
     height: 1px;
     background: rgba(0, 0, 0, 0.025);
@@ -708,6 +716,19 @@ font-size: 0.68rem;
 
 .actions-section-primary:hover {
     filter: brightness(1.02);
+}
+
+.actions-section-primary-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+.actions-section-primary-desc {
+    font-size: 0.62rem;
+    font-weight: 400;
+    opacity: 0.82;
 }
 
 .actions-section-action-icon {
@@ -838,6 +859,69 @@ font-size: 0.68rem;
 
 @keyframes blinker {
     50% { opacity: 0.25; }
+}
+
+/* context links section */
+.context-links-section {
+    border-top: 1px solid rgba(0, 0, 0, 0.035);
+    padding: 12px 0 8px;
+    margin-top: 16px;
+}
+
+.context-links-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-bottom: 10px;
+}
+
+.context-link-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.1s ease-out;
+}
+
+.context-link-row:hover {
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.context-link-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-gray-900, oklch(.21 .034 264.665));
+}
+
+.context-link-desc {
+    font-size: 0.68rem;
+    color: var(--color-gray-500, oklch(.551 .027 264.364));
+    white-space: nowrap;
+}
+
+.context-links-full-view {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--color-gray-500, oklch(.551 .027 264.364));
+    text-decoration: underline;
+    padding: 0 10px;
+    margin-top: 2px;
+}
+
+/* indicator search link */
+.bias-indicators-section-card-search {
+    display: inline-block;
+    margin-top: 5px;
+    font-size: 0.65rem;
+    color: var(--color-blue-600, oklch(.546 .245 262.881));
+    text-decoration: none;
+}
+
+.bias-indicators-section-card-search:hover {
+    text-decoration: underline;
 }
 
 .hidden {

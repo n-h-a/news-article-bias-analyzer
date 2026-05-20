@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Subtext",
     "version": "1.0.0",
-    "description": "Chrome extension that helps decode media, providing additional context on web pages to help promote media literacy",
+    "description": "Helps you read news articles more critically — AI summaries, loaded language signals, and fact-check links to dig deeper.",
     "icons": {
         "16": "icons/source.png",
         "32": "icons/source.png",

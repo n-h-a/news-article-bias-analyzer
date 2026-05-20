@@ -318,8 +318,6 @@ async function getActiveTabForWindow(windowId) {
 }
 
 function buildResultPayload({ art, llmResult, excerpt, excerptHtml }) {
-    const sourceAnalysis = llmResult.source_analysis || {};
-
     return {
         title: art.title || "Untitled article",
         url: art.url || "",
@@ -329,11 +327,7 @@ function buildResultPayload({ art, llmResult, excerpt, excerptHtml }) {
         bulletPoints: llmResult.bullet_points || [],
         indicators: llmResult.indicators || [],
         sourceInfo: {
-            name: art.source || "Unknown source",
-            bias: sourceAnalysis.leaning || "Unknown",
-            credibility: sourceAnalysis.credibility || "Unknown",
-            confidence: sourceAnalysis.confidence || "Low",
-            provider: "Subtext AI"
+            name: art.source || "Unknown source"
         }
     };
 }
@@ -607,7 +601,9 @@ async function callBackendAnalyze({ articleTitle, articleUrl, articleSource, art
         }
 
         if (res.status === 429) {
-            throw new Error(message || "You've reached the analysis limit for today. Try again tomorrow.");
+            const limitError = new Error(message || "You've reached the analysis limit for today. Come back tomorrow.");
+            limitError.isRateLimit = true;
+            throw limitError;
         }
 
         throw new Error(message || "Subtext could not complete the analysis. Try again in a moment.");
@@ -617,9 +613,6 @@ async function callBackendAnalyze({ articleTitle, articleUrl, articleSource, art
 
     if (!Array.isArray(data.bullet_points)) { data.bullet_points = []; }
     if (!Array.isArray(data.indicators)) { data.indicators = []; }
-    if (!data.source_analysis || typeof data.source_analysis !== "object") {
-        data.source_analysis = { leaning: "Unknown", confidence: "Low", credibility: "Unknown" };
-    }
 
     return data;
 }
@@ -834,7 +827,8 @@ chrome.runtime.onConnect.addListener((port) => {
                                 runId,
                                 error: String(err)
                             });
-                            sendAnalysisError(sessionWindowId, "analysis-failed", err?.message || "Subtext could not complete the analysis. Try again in a moment.");
+                            const reason = err?.isRateLimit ? "rate-limited" : "analysis-failed";
+                            sendAnalysisError(sessionWindowId, reason, err?.message || "Subtext could not complete the analysis. Try again in a moment.");
                             return;
                         }
 

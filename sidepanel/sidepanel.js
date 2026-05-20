@@ -28,10 +28,8 @@ function handlePanelMessage(msg) {
 
     if (msg.type === "SUBTEXT_ANALYSIS_ERROR") {
         const message = msg.payload?.message || "Subtext could not analyze this page. Try again.";
-        Logger.error("Analysis error received", {
-            reason: msg.payload?.reason || "unknown",
-            message
-        });
+        const reason = msg.payload?.reason || "unknown";
+        Logger.error("Analysis error received", { reason, message });
         recoverFromAnalysisError(message);
     }
 
@@ -190,7 +188,7 @@ const summaryLabel = document.getElementById("summary-section-loading-bar-label"
 // -- Page 2 : Results Page --
 const titleEl = document.getElementById("article-header-title");
 const sourceEl = document.getElementById("article-header-source");
-const articlePillEl = document.getElementById("article-header-bias-pill");
+
 const linkEl = document.getElementById("article-header-link");
 const analyzingCardImg = document.getElementById("analyzing-card-icon-img");
 const analyzingCardLabel = document.getElementById("analyzing-card-label");
@@ -202,15 +200,15 @@ const biasExcerpt = document.getElementById("bias-section-excerpt");
 const biasIndicatorsList = document.getElementById("bias-indicators-section-list");
 
 const sourceNameEl = document.getElementById("source-section-name");
-const sourcePillEl = document.getElementById("source-section-bias-pill");
-const sourceCredEl = document.getElementById("source-section-credibility");
-const sourceConfEl = document.getElementById("source-section-confidence");
-const sourceProviderEl = document.getElementById("source-section-provider");
+const sourceLookupLinkEl = document.getElementById("source-section-lookup-link");
 
 // -- actions --
 const copyBtn = document.getElementById("btn-actions-section-copy-summary");
 const seeContextBtn = document.getElementById("btn-actions-section-see-context");
 const settingsBtn = document.getElementById("btn-actions-section-settings");
+const contextLinksSection = document.getElementById("context-links-section");
+const contextLinksList = document.getElementById("context-links-list");
+const contextLinksFullViewEl = document.getElementById("context-links-full-view");
 
 // ========== PAGE TOGGLES ==========
 function showStartPage() {
@@ -267,6 +265,8 @@ let currentContext = {
     url: ""
 };
 
+let currentResult = null;
+
 // ========== LOADING TIMELINE (4 steps, min 1s each) ==========
 let currentRunId = 0;
 let minUiDone = false;
@@ -307,6 +307,7 @@ function setLoadingVisible() {
     if (biasIndicatorsContent) biasIndicatorsContent.classList.add("hidden");
     if (sourceLoading) sourceLoading.classList.remove("hidden");
     if (sourceContent) sourceContent.classList.add("hidden");
+    if (contextLinksSection) contextLinksSection.classList.add("hidden");
 
     Logger.info('Show loading page and elements');
 }
@@ -334,13 +335,13 @@ function clearRenderedResults() {
     renderSummary([]);
     renderBiasExcerpt("");
     renderBiasIndicators([]);
-    renderSourceAnalysis({
-        name: "",
-        bias: "Unknown",
-        credibility: "",
-        confidence: "",
-        provider: ""
-    });
+    renderSourceAnalysis({ name: "" });
+    currentResult = null;
+    if (contextLinksSection) contextLinksSection.classList.add("hidden");
+    const ctxLabelEl = seeContextBtn?.querySelector(".actions-section-primary-label");
+    const ctxDescEl = seeContextBtn?.querySelector(".actions-section-primary-desc");
+    if (ctxLabelEl) ctxLabelEl.textContent = "See More Context";
+    if (ctxDescEl) ctxDescEl.textContent = "Fact-checks, coverage & source research";
 }
 
 function renderDetectedPageState(data = {}) {
@@ -372,7 +373,7 @@ function renderDetectedPageState(data = {}) {
         detectedTopTextEl.textContent = isArticle
             ? (isUncertainArticle
                 ? "This page might be a standalone article. You can analyze it, but the detection signal is weaker than usual."
-                : "Subtext has detected a news article on this page. Click analyze to get an AI-generated summary and language cues.")
+                : "Subtext has detected a news article. Analyze to get a plain-language summary, see loaded language signals, and find fact-checks and more context.")
             : "This page does not look like a standalone article yet. Open an article page to analyze it with Subtext.";
     }
 
@@ -435,6 +436,7 @@ function applyResultToUI(res) {
     renderBiasExcerpt(res.excerpt, res.excerptHtml || "");
     renderBiasIndicators(res.indicators);
     renderSourceAnalysis(res.sourceInfo);
+    currentResult = res;
 
     setResultsVisible();
     Logger.info('Applied results to UI');
@@ -616,8 +618,16 @@ function renderBiasIndicators(indicators) {
         text.className = "bias-indicators-section-card-text";
         text.textContent = item.reason || item.explanation || "Bias-indicative phrase";
 
+        const searchLink = document.createElement("a");
+        searchLink.className = "bias-indicators-section-card-search";
+        searchLink.href = `https://www.google.com/search?q=${encodeURIComponent('"' + item.phrase + '"')}`;
+        searchLink.target = "_blank";
+        searchLink.rel = "noopener noreferrer";
+        searchLink.textContent = "Search this phrase \u2192";
+
         card.appendChild(phrase);
         card.appendChild(text);
+        card.appendChild(searchLink);
         biasIndicatorsList.appendChild(card);
     });
 }
@@ -633,30 +643,96 @@ function renderSourceAnalysis(info) {
     if (!info) return;
     if (sourceNameEl) sourceNameEl.textContent = info.name || "Unknown source";
 
-    if (sourcePillEl) {
-        resetBiasPill(sourcePillEl);
-
-        sourcePillEl.textContent = info.bias || "Unknown";
-        sourcePillEl.style.background = "var(--color-gray-100, #eef2f7)";
-        sourcePillEl.style.color = "var(--color-gray-700, #334155)";
+    if (sourceLookupLinkEl) {
+        const outletName = info.name || "";
+        const query = encodeURIComponent(outletName ? `${outletName} AllSides` : "AllSides media bias ratings");
+        sourceLookupLinkEl.textContent = outletName
+            ? `Look up "${outletName}" on AllSides \u2192`
+            : "Look up this outlet on AllSides \u2192";
+        sourceLookupLinkEl.href = `https://www.allsides.com/search?search=${query}`;
     }
 
-    if (sourceCredEl) {
-        sourceCredEl.textContent = `Estimated credibility: ${info.credibility || "Unknown"}`;
-    }
-    if (sourceConfEl) {
-        sourceConfEl.textContent = `Confidence: ${info.confidence || "Low"}`;
-    }
-    if (sourceProviderEl) {
-        sourceProviderEl.textContent = info.provider ? `AI-generated via ${info.provider}` : "";
+}
+
+function buildContextPageUrl(res) {
+    const pageUrl = chrome.runtime.getURL("context/context.html");
+    const url = new URL(pageUrl);
+    if (res.title) url.searchParams.set("title", res.title);
+    if (res.url) url.searchParams.set("url", res.url);
+    if (res.source) url.searchParams.set("source", res.source);
+    return url.toString();
+}
+
+function renderContextLinks(res) {
+    if (!contextLinksList) return;
+    contextLinksList.innerHTML = "";
+
+    const title = res.title || "";
+    const url = res.url || "";
+    const source = res.source || "";
+
+    const links = [];
+
+    if (title) {
+        links.push({
+            label: "More coverage",
+            desc: "Google News",
+            href: `https://news.google.com/search?q=${encodeURIComponent(title)}`
+        });
+        links.push({
+            label: "Search for fact checks",
+            desc: "Google",
+            href: `https://www.google.com/search?q=${encodeURIComponent(title + " fact check")}`
+        });
     }
 
-    if (articlePillEl) {
-        resetBiasPill(articlePillEl);
+    if (url) {
+        let urlDesc = source;
+        if (!urlDesc) {
+            try { urlDesc = new URL(url).hostname; } catch { urlDesc = url; }
+        }
+        links.push({
+            label: "Open original article",
+            desc: urlDesc,
+            href: url
+        });
+    }
 
-        articlePillEl.textContent = info.bias || "Unknown";
-        articlePillEl.style.background = "var(--color-gray-400, oklch(.707 .022 261.325))";
-        articlePillEl.style.color = "#fff";
+    if (source) {
+        links.push({
+            label: `${source} on AllSides`,
+            desc: "Media bias ratings",
+            href: `https://www.allsides.com/search?search=${encodeURIComponent(source)}`
+        });
+        links.push({
+            label: `${source} background`,
+            desc: "Wikipedia",
+            href: `https://www.google.com/search?q=${encodeURIComponent(source + " site:wikipedia.org")}`
+        });
+    }
+
+    links.forEach(link => {
+        const a = document.createElement("a");
+        a.className = "context-link-row";
+        a.href = link.href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "context-link-label";
+        labelSpan.textContent = link.label;
+
+        const descSpan = document.createElement("span");
+        descSpan.className = "context-link-desc";
+        descSpan.textContent = link.desc;
+
+        a.appendChild(labelSpan);
+        a.appendChild(descSpan);
+        contextLinksList.appendChild(a);
+    });
+
+    if (contextLinksFullViewEl) {
+        contextLinksFullViewEl.href = buildContextPageUrl(res);
     }
 }
 
@@ -719,8 +795,27 @@ copyBtn?.addEventListener("click", async () => {
 });
 
 seeContextBtn?.addEventListener("click", () => {
-    Logger.info("Opening more context view");
-    sendPanelMessage({ type: "SUBTEXT_OPEN_CONTEXT" });
+    if (!contextLinksSection || !currentResult) {
+        Logger.info("Opening more context view (fallback)");
+        sendPanelMessage({ type: "SUBTEXT_OPEN_CONTEXT" });
+        return;
+    }
+    const isOpen = !contextLinksSection.classList.contains("hidden");
+    const labelEl = seeContextBtn.querySelector(".actions-section-primary-label");
+    const descEl = seeContextBtn.querySelector(".actions-section-primary-desc");
+    if (isOpen) {
+        contextLinksSection.classList.add("hidden");
+        if (labelEl) labelEl.textContent = "See More Context";
+        if (descEl) descEl.textContent = "Fact-checks, coverage & source research";
+        Logger.info("Collapsed context links section");
+    } else {
+        renderContextLinks(currentResult);
+        contextLinksSection.classList.remove("hidden");
+        contextLinksSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (labelEl) labelEl.textContent = "Hide Context";
+        if (descEl) descEl.textContent = "Collapse context links";
+        Logger.info("Expanded context links section");
+    }
 });
 
 settingsBtn?.addEventListener("click", () => {
