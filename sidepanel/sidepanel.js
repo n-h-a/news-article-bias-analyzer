@@ -193,7 +193,7 @@ const linkEl = document.getElementById("article-header-link");
 const analyzingCardImg = document.getElementById("analyzing-card-icon-img");
 const analyzingCardLabel = document.getElementById("analyzing-card-label");
 const analyzingArticleTitle = document.getElementById("analyzing-card-article-title");
-const DEFAULT_ANALYSIS_CARD_ICON = "../icons/source.png";
+const DEFAULT_ANALYSIS_CARD_ICON = "../icons/world_icon.png";
 
 const summaryList = document.getElementById("summary-section-list");
 const biasExcerpt = document.getElementById("bias-section-excerpt");
@@ -616,7 +616,7 @@ function renderBiasIndicators(indicators) {
 
         const text = document.createElement("p");
         text.className = "bias-indicators-section-card-text";
-        text.textContent = item.reason || item.explanation || "Bias-indicative phrase";
+        text.textContent = item.reason || "Bias-indicative phrase";
 
         const searchLink = document.createElement("a");
         searchLink.className = "bias-indicators-section-card-search";
@@ -630,13 +630,6 @@ function renderBiasIndicators(indicators) {
         card.appendChild(searchLink);
         biasIndicatorsList.appendChild(card);
     });
-}
-
-function resetBiasPill(pillEl) {
-    if (!pillEl) return;
-
-    pillEl.style.background = "";
-    pillEl.style.color = "";
 }
 
 function renderSourceAnalysis(info) {

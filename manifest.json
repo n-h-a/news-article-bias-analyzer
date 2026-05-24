@@ -4,10 +4,10 @@
     "version": "1.0.0",
     "description": "Helps you read news articles more critically — AI summaries, loaded language signals, and fact-check links to dig deeper.",
     "icons": {
-        "16": "icons/source.png",
-        "32": "icons/source.png",
-        "48": "icons/source.png",
-        "128": "icons/source.png"
+        "16": "icons/S/icon16.png",
+        "32": "icons/S/icon32.png",
+        "48": "icons/S/icon48.png",
+        "128": "icons/S/icon128.png"
     },
     "permissions": [
         "sidePanel",
@@ -22,8 +22,10 @@
     "action": {
         "default_title": "Open Subtext",
         "default_icon": {
-            "16": "icons/source.png",
-            "32": "icons/source.png"
+            "16": "icons/S/icon16.png",
+            "32": "icons/S/icon32.png",
+            "48": "icons/S/icon48.png",
+            "128": "icons/S/icon128.png"
         }
     },
     "web_accessible_resources": [

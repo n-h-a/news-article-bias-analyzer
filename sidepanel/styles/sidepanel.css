@@ -363,8 +363,9 @@
 .analyzing-card-label {
     display: flex;
     align-items: center;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     color: var(--color-gray-500, oklch(.551 .027 264.364));
+    margin-top: 7px;
     margin-bottom: 0px;
 }
 
