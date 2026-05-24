@@ -5,6 +5,7 @@ This project includes the following third-party component:
 
 1. Readability.js
    Copyright (c) 2010 Arc90 Inc
+   Bundled copy: vendor/Readability.js, derived from Arc90's readability.js
    Licensed under the Apache License, Version 2.0
    You may obtain a copy of the License at:
        http://www.apache.org/licenses/LICENSE-2.0
