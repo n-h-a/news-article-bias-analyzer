@@ -14,6 +14,14 @@ A Chrome extension for critical news reading. Subtext detects news articles as y
 
 ---
 
+## Screenshots
+
+![Article detected — start state](assets/screenshot-start.png)
+![Analysis results with language signals](assets/screenshot-results.png)
+![Analysis results — summary view](assets/screenshot-summary.png)
+
+---
+
 ## Requirements
 
 - Google Chrome (or any Chromium-based browser)
