@@ -25,11 +25,22 @@
     color: var(--color-gray-900, oklch(.21 .034 264.665));
 }
 
-.panel-header-progress {
-    width: 40px;
-    height: 2px;
-    background: var(--color-blue-600, oklch(.546 .245 262.881));
-    border-radius: 9999px;
+.panel-header-settings-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-gray-400, oklch(.707 .022 261.325));
+    cursor: pointer;
+    line-height: 0;
+}
+
+.panel-header-settings-btn:hover {
+    background: var(--color-gray-100, oklch(.967 .003 264.542));
+    color: var(--color-gray-700, oklch(.373 .034 259.733));
 }
 
 /* === PAGES === */
@@ -770,6 +781,14 @@ font-size: 0.68rem;
 
 .analyze-button {
     margin: 20px;
+}
+
+.start-page-hint {
+    margin: 10px 0 0;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: rgba(15, 23, 42, 0.45);
+    text-align: center;
 }
 
 .start-page-status {

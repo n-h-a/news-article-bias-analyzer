@@ -202,10 +202,12 @@ const biasIndicatorsList = document.getElementById("bias-indicators-section-list
 const sourceNameEl = document.getElementById("source-section-name");
 const sourceLookupLinkEl = document.getElementById("source-section-lookup-link");
 
+// -- header --
+const headerSettingsBtn = document.getElementById("btn-header-settings");
+
 // -- actions --
 const copyBtn = document.getElementById("btn-actions-section-copy-summary");
 const seeContextBtn = document.getElementById("btn-actions-section-see-context");
-const settingsBtn = document.getElementById("btn-actions-section-settings");
 const contextLinksSection = document.getElementById("context-links-section");
 const contextLinksList = document.getElementById("context-links-list");
 const contextLinksFullViewEl = document.getElementById("context-links-full-view");
@@ -811,8 +813,8 @@ seeContextBtn?.addEventListener("click", () => {
     }
 });
 
-settingsBtn?.addEventListener("click", () => {
-    Logger.info("Opening settings from actions");
+headerSettingsBtn?.addEventListener("click", () => {
+    Logger.info("Opening settings from header");
     openSettings();
 });
 

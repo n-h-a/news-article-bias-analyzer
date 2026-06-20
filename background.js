@@ -6,28 +6,8 @@ const ANALYSIS_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const ANALYSIS_CACHE_MAX_ENTRIES = 40;
 const ANALYSIS_REQUEST_TIMEOUT_MS = 45000;
 
-// Key used to persist the anonymous device UUID in chrome.storage.local.
-// The UUID is generated once on first use and reused across sessions.
-const DEVICE_ID_KEY = "subtext_device_id";
-
-const IS_DEV = !("update_url" in chrome.runtime.getManifest());
-const BACKEND_API_URL = IS_DEV
-    ? "http://localhost:3000/analyze"
-    : "https://subtext-api-production-82b5.up.railway.app/analyze";
-
-// ========== DEVICE ID ==========
-
-// Returns the stored anonymous device UUID, creating and persisting one if
-// this is the first time the extension has been used on this device.
-// Uses crypto.randomUUID() which is available natively in MV3 service workers.
-async function getOrCreateDeviceId() {
-    const stored = await chrome.storage.local.get(DEVICE_ID_KEY);
-    if (stored[DEVICE_ID_KEY]) return stored[DEVICE_ID_KEY];
-
-    const id = crypto.randomUUID();
-    await chrome.storage.local.set({ [DEVICE_ID_KEY]: id });
-    return id;
-}
+const OPENAI_API_KEY_KEY = "subtext_openai_api_key";
+const OPENAI_MODEL = "gpt-4o-mini";
 
 const panelSessions = new Map();
 
@@ -557,36 +537,84 @@ function invalidUrl(url) {
   return blockedPrefixes.some(prefix => url.startsWith(prefix));
 }
 
-// ========== BACKEND CALL ==========
-async function callBackendAnalyze({ articleTitle, articleUrl, articleSource, articleText }) {
+// ========== SYSTEM PROMPT ==========
+
+const SYSTEM_PROMPT = `
+You are a media analysis assistant. Read the article and return JSON in this exact shape:
+
+{
+  "bullet_points": [
+    "1–2 sentence key point 1",
+    "1–2 sentence key point 2",
+    "1–2 sentence key point 3",
+    "1–2 sentence key point 4",
+    "1–2 sentence key point 5",
+    "1–2 sentence key point 6"
+  ],
+  "indicators": [
+    { "phrase": "exact phrase from article", "bias": "loaded", "reason": "short explanation" }
+  ]
+}
+
+Rules:
+- Stay neutral, factual, concise.
+- ALWAYS return 2-6 bullet_points, 1–2 sentences each.
+- indicators must match exact article text and include a brief reason.
+- indicators: flag only phrases that are emotionally loaded or use charged framing. All indicators must use bias="loaded".
+- Output valid JSON only, no code fences.
+
+Examples:
+- Loaded: "shocking revelation" — amplifies alarm beyond what the article supports.
+- Loaded: "heroic stand" — emotionally praises one side or actor.
+- Loaded: "slammed" / "blasted" — combative framing for routine criticism.
+- Loaded: "crisis" — escalates urgency beyond the stated facts.
+`.trim();
+
+// ========== OPENAI CALL ==========
+
+async function callOpenAI({ articleTitle, articleUrl, articleSource, articleText }) {
+    const stored = await chrome.storage.local.get(OPENAI_API_KEY_KEY);
+    const apiKey = stored[OPENAI_API_KEY_KEY];
+
+    if (!apiKey) {
+        const err = new Error("Add your OpenAI API key in Settings to use Subtext.");
+        err.isNoApiKey = true;
+        throw err;
+    }
+
+    const userMessage = [
+        `Title: ${articleTitle || "Unknown"}`,
+        `URL: ${articleUrl || "Unknown"}`,
+        `Source: ${articleSource || "Unknown"}`,
+        `Article:\n${articleText}`
+    ].join("\n");
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_REQUEST_TIMEOUT_MS);
 
-    // Retrieve (or generate) the anonymous device UUID for the usage counter.
-    // Non-fatal: if storage fails we proceed without a device ID.
-    let deviceId = null;
-    try {
-        deviceId = await getOrCreateDeviceId();
-    } catch {
-        logError("Failed to retrieve device ID; proceeding without it");
-    }
-
-    const headers = { "Content-Type": "application/json" };
-    if (deviceId) headers["X-Device-ID"] = deviceId;
-
     let res;
     try {
-        res = await fetch(BACKEND_API_URL, {
+        res = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
-            headers,
-            body: JSON.stringify({ articleTitle, articleUrl, articleSource, articleText }),
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: OPENAI_MODEL,
+                messages: [
+                    { role: "system", content: SYSTEM_PROMPT },
+                    { role: "user", content: userMessage }
+                ],
+                temperature: 0.4
+            }),
             signal: controller.signal
         });
     } catch (error) {
         if (error?.name === "AbortError") {
             throw new Error("The analysis is taking longer than expected. Try again in a moment.");
         }
-        throw new Error("Subtext could not reach the analysis server. Check your connection and try again.");
+        throw new Error("Subtext could not reach OpenAI. Check your connection and try again.");
     } finally {
         clearTimeout(timeoutId);
     }
@@ -595,26 +623,42 @@ async function callBackendAnalyze({ articleTitle, articleUrl, articleSource, art
         let message = "";
         try {
             const errorData = await res.json();
-            message = errorData?.error || errorData?.message || "";
+            message = errorData?.error?.message || "";
         } catch {
             message = await res.text().catch(() => "");
         }
 
+        if (res.status === 401) {
+            const keyErr = new Error("Your OpenAI API key is invalid. Check it in Settings.");
+            keyErr.isNoApiKey = true;
+            throw keyErr;
+        }
+
         if (res.status === 429) {
-            const limitError = new Error(message || "You've reached the analysis limit for today. Come back tomorrow.");
-            limitError.isRateLimit = true;
-            throw limitError;
+            throw new Error("OpenAI rate limit reached. Wait a moment and try again.");
         }
 
         throw new Error(message || "Subtext could not complete the analysis. Try again in a moment.");
     }
 
     const data = await res.json();
+    let content = data?.choices?.[0]?.message?.content?.trim() || "";
 
-    if (!Array.isArray(data.bullet_points)) { data.bullet_points = []; }
-    if (!Array.isArray(data.indicators)) { data.indicators = []; }
+    if (content.startsWith("```")) {
+        content = content.replace(/^```(json)?/i, "").replace(/```$/, "").trim();
+    }
 
-    return data;
+    let parsed;
+    try {
+        parsed = JSON.parse(content);
+    } catch {
+        throw new Error("Subtext could not parse the analysis result. Try again in a moment.");
+    }
+
+    if (!Array.isArray(parsed.bullet_points)) { parsed.bullet_points = []; }
+    if (!Array.isArray(parsed.indicators)) { parsed.indicators = []; }
+
+    return parsed;
 }
 
 // ========== MESSAGE HUB ==========
@@ -808,7 +852,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 articleTitle,
                                 runId
                             });
-                            llmResult = await callBackendAnalyze({
+                            llmResult = await callOpenAI({
                                 articleTitle,
                                 articleUrl,
                                 articleSource,
@@ -827,7 +871,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 runId,
                                 error: String(err)
                             });
-                            const reason = err?.isRateLimit ? "rate-limited" : "analysis-failed";
+                            const reason = err?.isNoApiKey ? "no-api-key" : "analysis-failed";
                             sendAnalysisError(sessionWindowId, reason, err?.message || "Subtext could not complete the analysis. Try again in a moment.");
                             return;
                         }

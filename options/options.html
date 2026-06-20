@@ -211,42 +211,47 @@
         <main>
             <section class="hero">
                 <p class="eyebrow">Subtext Settings</p>
-                <h1>Manage your Subtext data.</h1>
+                <h1>Manage your Subtext settings.</h1>
                 <p class="summary">
-                    Subtext sends article text to its analysis server when you request an analysis. Results are cached in session storage so the current browsing session can restore previous results.
+                    Subtext uses your OpenAI API key to analyze articles directly from your browser. Your key is stored locally on your device and never shared.
                 </p>
             </section>
 
             <div class="grid">
                 <section class="card">
-                    <h2>Data handling</h2>
-                    <ul class="list">
-                        <li>Article title, URL, source, excerpt, and article text are sent to the Subtext analysis server to generate a summary and language signal indicators.</li>
-                        <li>Cached analysis results are stored in session storage so the current browsing session can restore previous results.</li>
-                        <li>You can clear cached analysis data from this page.</li>
-                    </ul>
+                    <h2>OpenAI API key</h2>
+                    <p class="small">Required to run analyses. Your key is stored locally on your device and used only to call OpenAI directly.</p>
+                    <label>
+                        API key
+                        <input type="password" id="api-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+                    </label>
+                    <p id="api-key-preview" class="small" style="display:none;"></p>
                     <div class="actions">
-                        <button id="clear-cache" class="secondary">Clear cached analyses</button>
+                        <button id="save-key" class="primary">Save key</button>
+                        <button id="clear-key" class="danger">Clear key</button>
                     </div>
+                    <p id="api-key-status" class="status" aria-live="polite"></p>
                     <div class="card-footer">
-                        <a href="https://nha-test1.github.io/subtext-web/privacy.html" target="_blank" rel="noreferrer">
-                            Privacy policy
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">
+                            Get an OpenAI API key
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 1H11M11 1V8.5M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </a>
                     </div>
                 </section>
 
                 <section class="card">
-                    <h2>Free tier</h2>
+                    <h2>Data handling</h2>
                     <ul class="list">
-                        <li>15 analyses per day, per device.</li>
-                        <li>Your daily count resets at midnight UTC.</li>
-                        <li>Previously analyzed articles load from cache and count toward your daily limit.</li>
+                        <li>When you request an analysis, article title, URL, source, and text are sent directly to OpenAI using your API key.</li>
+                        <li>Cached analysis results are stored in session storage so the current browsing session can restore previous results.</li>
+                        <li>You can clear cached analysis data from this page.</li>
                     </ul>
+                    <div class="actions">
+                        <button id="clear-cache" class="secondary" style="margin: 10px;">Clear cached analyses</button>
+                    </div>
+                    <p id="status" class="status" aria-live="polite"></p>
                 </section>
             </div>
-
-            <p id="status" class="status" aria-live="polite"></p>
         </main>
         <script type="module" src="options.js"></script>
     </body>

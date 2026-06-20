@@ -13,7 +13,9 @@
             <div class="panel-header-left">
                 <span class="panel-header-title">Subtext</span>
             </div>
-            <div class="panel-header-progress"></div>
+            <button id="btn-header-settings" class="panel-header-settings-btn" aria-label="Settings" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
         </header>
 
         <!-- STARTING PAGE -->
@@ -55,6 +57,7 @@
                 <button id="btn-start-analyze" class="actions-section-primary btn-start-analyze">
                     Analyze Article
                 </button>
+                <p class="start-page-hint">Some news sites load content slowly. If Subtext hasn't detected an article yet, wait a moment for the page to finish loading and try again.</p>
             </div>
         </main>
 
@@ -213,10 +216,6 @@
                     <button id="btn-actions-section-copy-summary" class="actions-section-secondary">
                         <span class="actions-section-secondary-icon" aria-hidden="true">📋</span>
                         <span>Copy Summary</span>
-                    </button>
-                    <button id="btn-actions-section-settings" class="actions-section-secondary">
-                        <span class="actions-section-secondary-icon" aria-hidden="true">⚙</span>
-                        <span>Settings</span>
                     </button>
                 </div>
             </section>
