@@ -97,6 +97,6 @@ No data is collected. No analytics. No remote servers. All processing happens be
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+© 2025 Nikki Ha. All rights reserved. See [LICENSE](LICENSE) for details.
 
 Third-party licenses: [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
